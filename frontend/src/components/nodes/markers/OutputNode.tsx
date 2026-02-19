@@ -1,49 +1,29 @@
-import { Handle, Position } from "reactflow";
+import type { JSX } from "react";
+import BaseNode, { type NodeData } from "../base/LeftHandle";
+import type { NodeProps } from "reactflow";
 
-export type NodeData = { label: string; subtitle?: string };
-
-export const handleStyle: React.CSSProperties = {
-  width: 10,
-  height: 10,
-  borderRadius: 999,
+type NodeDefinition = {
+  type: string;
+  label: string;
+  data: NodeData;
 };
 
-export default function BaseNode({
-  data,
-  accent,
-}: {
-  data: NodeData;
+type NodeComponent = ((props: NodeProps<NodeData>) => JSX.Element) & {
+  definition: NodeDefinition;
   accent: string;
-}) {
-  return (
-    <div
-      style={{
-        width: "100%",
-        height: "100%",
-        padding: 10,
-        border: `1px solid ${accent}`,
-        borderRadius: 12,
-        background: "white",
-        fontFamily: "system-ui, sans-serif",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        position: "relative",
-      }}
-    >
-      <Handle type="target" position={Position.Left} style={handleStyle} />
+  color: string;
+};
 
-      <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.1 }}>
-        {data.label}
-      </div>
+const OutputNode: NodeComponent = function OutputNode({ data }: NodeProps<NodeData>) {
+  return <BaseNode data={data} accent={OutputNode.accent} color={OutputNode.color} />;
+};
 
-      {data.subtitle && (
-        <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-          {data.subtitle}
-        </div>
-      )}
+OutputNode.definition = {
+  type: "outputNode",
+  label: "Output",
+  data: { label: "Output" },
+};
+OutputNode.accent = "#fff4f4";
+OutputNode.color = "#ffc1c1";
 
-      <Handle type="source" position={Position.Right} style={handleStyle} />
-    </div>
-  );
-}
+export default OutputNode;

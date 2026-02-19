@@ -21,10 +21,69 @@ import {
   nodePalette,
   nodeTypes,
 } from "../components/nodes/NodeTypes";
+import {
+  NODE_CARD_BORDER,
+  NODE_CARD_RADIUS,
+  NODE_HANDLE_STYLE,
+  NODE_TITLE_ALPHA,
+  NODE_TITLE_PADDING,
+  withAlpha,
+} from "../components/nodes/base/nodeCardStyle";
+import {
+  SANDBOX_DEFAULT_UNTITLED_STRATEGY_NAME,
+  SANDBOX_LIBRARY_NODE_WIDTH,
+  SANDBOX_NODE_WIDTH,
+  SANDBOX_NOTIFICATION_TIMEOUT_MS,
+  SANDBOX_STRATEGIES_API,
+} from "../config/sandboxConfig";
 
-const NODE_WIDTH = 240;
-const LIBRARY_NODE_WIDTH = 180;
-const NOTIFICATION_TIMEOUT_MS = 4200;
+type StrategySummary = {
+  id: string;
+  name: string;
+  lastEdited: string;
+};
+
+type GraphNodePayload = {
+  id: string;
+  type: string;
+  position: {
+    x: number;
+    y: number;
+  };
+  data: Record<string, unknown>;
+};
+
+type GraphEdgePayload = {
+  id: string;
+  source: string;
+  target: string;
+};
+
+type GraphPayload = {
+  nodes: GraphNodePayload[];
+  edges: GraphEdgePayload[];
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function toSerializableNodeType(type: string | undefined): string {
+  if (type === "outputNode") return "output";
+  return type ?? "unknown";
+}
+
+function toFlowNodeType(type: string): string | undefined {
+  if (type === "output") return "outputNode";
+  if (isSupportedNodeType(type)) return type;
+  return undefined;
+}
+
+function formatLastEdited(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
 
 function hasLeftHandle(type: string | undefined): boolean {
   return type === "eps" || type === "outputNode";
@@ -40,15 +99,8 @@ function getPreviewVisual(type: string): {
   accent: string;
 } {
   const visual = getNodeVisual(type);
-  if (!visual) return { border: "1px solid #d1d5db", background: "white", accent: "#16a34a" };
-  return { border: "1px solid #d1d5db", background: visual.color, accent: visual.accent };
-}
-
-function translucent(color: string, alphaHex: string): string {
-  if (color.startsWith("#") && color.length === 7) {
-    return `${color}${alphaHex}`;
-  }
-  return color;
+  if (!visual) return { border: NODE_CARD_BORDER, background: "white", accent: "#16a34a" };
+  return { border: NODE_CARD_BORDER, background: visual.color, accent: visual.accent };
 }
 
 function NodeTemplatePreview({ type }: { type: string }) {
@@ -65,7 +117,7 @@ function NodeTemplatePreview({ type }: { type: string }) {
         width: "100%",
         padding: 0,
         border: visual.border,
-        borderRadius: 20,
+        borderRadius: NODE_CARD_RADIUS,
         background: visual.background,
         fontFamily: "system-ui, sans-serif",
         display: "flex",
@@ -79,8 +131,8 @@ function NodeTemplatePreview({ type }: { type: string }) {
       {hasLeftHandle(type) && <div style={previewLeftHandleStyle} />}
       <div
         style={{
-          padding: "14px 16px",
-          background: translucent(visual.accent, "1A"),
+          padding: NODE_TITLE_PADDING,
+          background: withAlpha(visual.accent, NODE_TITLE_ALPHA),
           borderBottom: hasBody ? "1px solid #e5e7eb" : undefined,
         }}
       >
@@ -172,9 +224,15 @@ function ErrorNotification({ message }: { message: string }) {
 }
 
 function SandboxInner() {
-  const { screenToFlowPosition } = useReactFlow();
+  const { fitView, screenToFlowPosition } = useReactFlow();
   const [errorMessage, setErrorMessage] = useState("");
   const [pendingPointerNodeType, setPendingPointerNodeType] = useState<string | null>(null);
+  const [strategies, setStrategies] = useState<StrategySummary[]>([]);
+  const [isStrategiesLoading, setIsStrategiesLoading] = useState(false);
+  const [strategiesError, setStrategiesError] = useState("");
+  const [currentStrategyId, setCurrentStrategyId] = useState<string | null>(null);
+  const [currentStrategyName, setCurrentStrategyName] = useState<string | null>(null);
+  const [isStrategyLoading, setIsStrategyLoading] = useState(false);
   const timeoutRef = useRef<number | null>(null);
 
   const notifyError = useCallback((message: string) => {
@@ -186,7 +244,7 @@ function SandboxInner() {
     timeoutRef.current = window.setTimeout(() => {
       setErrorMessage("");
       timeoutRef.current = null;
-    }, NOTIFICATION_TIMEOUT_MS);
+    }, SANDBOX_NOTIFICATION_TIMEOUT_MS);
   }, []);
 
   useEffect(() => {
@@ -204,30 +262,186 @@ function SandboxInner() {
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
   const graphDatabase = useMemo(() => {
+    const minX = nodes.length > 0 ? Math.min(...nodes.map((node) => node.position.x)) : 0;
+    const minY = nodes.length > 0 ? Math.min(...nodes.map((node) => node.position.y)) : 0;
+
     return {
       nodes: nodes.map((node) => {
-        const incoming = edges
-          .filter((edge) => edge.target === node.id)
-          .map((edge) => edge.source)
-          .filter((source): source is string => Boolean(source));
-        const outgoing = edges
-          .filter((edge) => edge.source === node.id)
-          .map((edge) => edge.target)
-          .filter((target): target is string => Boolean(target));
+        const extra =
+          node.data && typeof node.data === "object" && "extra" in node.data
+            ? ((node.data as { extra?: Record<string, unknown> }).extra ?? {})
+            : {};
+
+        const data = Object.fromEntries(
+          Object.entries(extra).filter(([, value]) => value !== null && value !== undefined)
+        );
 
         return {
-          nodeId: node.id,
-          nodeType: node.type,
-          leftConnection: hasLeftHandle(node.type) ? incoming : [],
-          rightConnection: hasRightHandle(node.type) ? outgoing : [],
-          extraData:
-            node.data && typeof node.data === "object" && "extra" in node.data
-              ? (node.data as { extra?: Record<string, unknown> }).extra ?? null
-              : null,
+          id: node.id,
+          type: toSerializableNodeType(node.type),
+          position: {
+            x: Math.round(node.position.x - minX),
+            y: Math.round(node.position.y - minY),
+          },
+          data,
         };
       }),
-    };
+      edges: edges.map((edge, index) => ({
+        id: edge.id || `e-${index + 1}`,
+        source: edge.source,
+        target: edge.target,
+      })),
+    } satisfies GraphPayload;
   }, [edges, nodes]);
+
+  const fetchStrategies = useCallback(
+    async (signal?: AbortSignal) => {
+      setIsStrategiesLoading(true);
+      setStrategiesError("");
+
+      try {
+        const response = await fetch(SANDBOX_STRATEGIES_API.listStrategiesUrl, {
+          method: "GET",
+          signal,
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to fetch strategies (${response.status})`);
+        }
+
+        const payload = (await response.json()) as { strategies?: unknown };
+        const nextStrategies = Array.isArray(payload.strategies)
+          ? payload.strategies.flatMap((strategy) => {
+              if (!isRecord(strategy)) return [];
+              const { id, lastEdited, name } = strategy;
+              if (
+                typeof id !== "string" ||
+                typeof name !== "string" ||
+                typeof lastEdited !== "string"
+              ) {
+                return [];
+              }
+              return [{ id, name, lastEdited }];
+            })
+          : [];
+
+        setStrategies(nextStrategies);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setStrategies([]);
+        setStrategiesError("Could not load strategies.");
+        notifyError("Could not load previous strategies. Please try again.");
+      } finally {
+        setIsStrategiesLoading(false);
+      }
+    },
+    [notifyError]
+  );
+
+  useEffect(() => {
+    if (nodes.length > 0) return;
+
+    const abortController = new AbortController();
+    void fetchStrategies(abortController.signal);
+    return () => {
+      abortController.abort();
+    };
+  }, [fetchStrategies, nodes.length]);
+
+  const loadStrategy = useCallback(
+    async (strategy: StrategySummary) => {
+      setIsStrategyLoading(true);
+      setStrategiesError("");
+
+      try {
+        const response = await fetch(
+          SANDBOX_STRATEGIES_API.strategyByIdUrl(strategy.id),
+          { method: "GET" }
+        );
+        if (!response.ok) {
+          throw new Error(`Failed to fetch strategy (${response.status})`);
+        }
+
+        const payload = (await response.json()) as {
+          nodes?: unknown;
+          edges?: unknown;
+        };
+        if (!Array.isArray(payload.nodes) || !Array.isArray(payload.edges)) {
+          throw new Error("Strategy data is malformed.");
+        }
+
+        const loadedNodes: Node[] = payload.nodes.flatMap((rawNode) => {
+          if (!isRecord(rawNode)) return [];
+
+          const { data, id, position, type } = rawNode;
+          if (!isRecord(position)) return [];
+          if (
+            typeof id !== "string" ||
+            typeof type !== "string" ||
+            typeof position.x !== "number" ||
+            typeof position.y !== "number"
+          ) {
+            return [];
+          }
+
+          const flowNodeType = toFlowNodeType(type);
+          if (!flowNodeType) return [];
+
+          const baseData = getDefaultNodeData(flowNodeType);
+          if (!baseData) return [];
+
+          const mergedExtra = {
+            ...(baseData.extra ?? {}),
+            ...(isRecord(data) ? data : {}),
+          };
+          const nextData =
+            Object.keys(mergedExtra).length > 0
+              ? { ...baseData, extra: mergedExtra }
+              : { ...baseData };
+
+          return [
+            {
+              id,
+              type: flowNodeType,
+              position: { x: position.x, y: position.y },
+              data: nextData,
+              style: { width: SANDBOX_NODE_WIDTH, color: "black" },
+            },
+          ];
+        });
+
+        const loadedEdges: Edge[] = payload.edges.flatMap((rawEdge, index) => {
+          if (!isRecord(rawEdge)) return [];
+
+          const { id, source, target } = rawEdge;
+          if (typeof source !== "string" || typeof target !== "string") return [];
+
+          return [
+            {
+              id: typeof id === "string" && id.length > 0 ? id : `e-${index + 1}`,
+              source,
+              target,
+              type: "smoothstep",
+              animated: true,
+            },
+          ];
+        });
+
+        setNodes(loadedNodes);
+        setEdges(loadedEdges);
+        setCurrentStrategyId(strategy.id);
+        setCurrentStrategyName(strategy.name);
+        setPendingPointerNodeType(null);
+        window.requestAnimationFrame(() => {
+          void fitView({ padding: 0.2, duration: 280 });
+        });
+      } catch {
+        notifyError("Could not load this strategy graph. Please try another strategy.");
+      } finally {
+        setIsStrategyLoading(false);
+      }
+    },
+    [fitView, notifyError, setEdges, setNodes]
+  );
 
   const onConnect = useCallback(
     (params: Edge | Connection) =>
@@ -267,10 +481,14 @@ function SandboxInner() {
         type,
         position,
         data: nodeData,
-        style: { width: NODE_WIDTH, color: "black" },
+        style: { width: SANDBOX_NODE_WIDTH, color: "black" },
       };
 
       setNodes((nds) => nds.concat(newNode));
+      if (nodes.length === 0) {
+        setCurrentStrategyName(SANDBOX_DEFAULT_UNTITLED_STRATEGY_NAME);
+        setCurrentStrategyId(null);
+      }
       return true;
     },
     [nodes, notifyError, setNodes]
@@ -334,6 +552,12 @@ function SandboxInner() {
     },
     [pendingPointerNodeType, screenToFlowPosition, tryCreateNode]
   );
+
+  const onCreateStrategy = useCallback(() => {
+    setCurrentStrategyId(null);
+    setCurrentStrategyName(SANDBOX_DEFAULT_UNTITLED_STRATEGY_NAME);
+    setPendingPointerNodeType(null);
+  }, []);
 
   return (
     <div
@@ -435,12 +659,104 @@ function SandboxInner() {
           <Controls />
         </ReactFlow>
       </div>
+
+      <div
+        style={{
+          width: 220,
+          padding: 12,
+          borderLeft: "1px solid #e5e7eb",
+          fontFamily: "system-ui, sans-serif",
+          boxSizing: "border-box",
+          overflowY: "auto",
+        }}
+      >
+        <div style={{ fontWeight: 700, marginBottom: 10 }}>Strategies</div>
+
+        <div
+          style={{
+            marginBottom: 12,
+            padding: "8px 10px",
+            border: "1px solid #e5e7eb",
+            borderRadius: 8,
+            background: "#f9fafb",
+          }}
+        >
+          <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>Active</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>
+            {currentStrategyName ?? "No strategy loaded"}
+          </div>
+          {currentStrategyId && (
+            <div style={{ marginTop: 2, fontSize: 11, color: "#6b7280" }}>ID: {currentStrategyId}</div>
+          )}
+        </div>
+
+        {nodes.length === 0 ? (
+          <>
+            {isStrategiesLoading && (
+              <div style={{ fontSize: 12, color: "#6b7280" }}>Loading previous strategies...</div>
+            )}
+
+            {!isStrategiesLoading && strategiesError && (
+              <>
+                <div style={{ fontSize: 12, color: "#991b1b", marginBottom: 8 }}>{strategiesError}</div>
+                <button type="button" onClick={() => void fetchStrategies()} style={toolbarButtonStyle}>
+                  Retry
+                </button>
+              </>
+            )}
+
+            {!isStrategiesLoading && !strategiesError && strategies.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {strategies.map((strategy) => (
+                  <button
+                    key={strategy.id}
+                    type="button"
+                    onClick={() => void loadStrategy(strategy)}
+                    disabled={isStrategyLoading}
+                    style={{
+                      ...strategyCardButtonStyle,
+                      borderColor: currentStrategyId === strategy.id ? "#93c5fd" : "#e5e7eb",
+                      background: currentStrategyId === strategy.id ? "#eff6ff" : "white",
+                      opacity: isStrategyLoading ? 0.7 : 1,
+                      cursor: isStrategyLoading ? "wait" : "pointer",
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: 13, color: "#111827" }}>{strategy.name}</div>
+                    <div style={{ marginTop: 4, fontSize: 11, color: "#6b7280" }}>
+                      Last edited: {formatLastEdited(strategy.lastEdited)}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {!isStrategiesLoading && !strategiesError && strategies.length === 0 && (
+              <>
+                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>
+                  No previous strategies found.
+                </div>
+                <button type="button" onClick={onCreateStrategy} style={toolbarButtonStyle}>
+                  Create strategy
+                </button>
+              </>
+            )}
+
+            {isStrategyLoading && (
+              <div style={{ marginTop: 10, fontSize: 12, color: "#6b7280" }}>Loading graph...</div>
+            )}
+          </>
+        ) : (
+          <div style={{ fontSize: 12, color: "#6b7280" }}>
+            This graph is ready. Add nodes or edges to continue editing.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 const nodeTemplateWrapperStyle: React.CSSProperties = {
-  width: LIBRARY_NODE_WIDTH,
+  width: SANDBOX_LIBRARY_NODE_WIDTH,
   marginBottom: 12,
   overflow: "visible",
 };
@@ -450,6 +766,27 @@ const nodeTemplateDraggableStyle: React.CSSProperties = {
   cursor: "grab",
   userSelect: "none",
   WebkitUserSelect: "none",
+};
+
+const toolbarButtonStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "8px 10px",
+  border: "1px solid #d1d5db",
+  borderRadius: 8,
+  background: "white",
+  color: "#111827",
+  fontSize: 12,
+  fontWeight: 600,
+  textAlign: "left",
+};
+
+const strategyCardButtonStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "8px 10px",
+  border: "1px solid #e5e7eb",
+  borderRadius: 8,
+  textAlign: "left",
+  background: "white",
 };
 
 const previewInputStyle: React.CSSProperties = {
@@ -469,11 +806,7 @@ const previewLeftHandleStyle: React.CSSProperties = {
   left: -8,
   top: "50%",
   transform: "translateY(-50%)",
-  width: 14,
-  height: 14,
-  borderRadius: 999,
-  background: "#94a3b8",
-  border: "2px solid #f8fafc",
+  ...NODE_HANDLE_STYLE,
 };
 
 const previewRightHandleStyle: React.CSSProperties = {
@@ -481,11 +814,7 @@ const previewRightHandleStyle: React.CSSProperties = {
   right: -8,
   top: "50%",
   transform: "translateY(-50%)",
-  width: 14,
-  height: 14,
-  borderRadius: 999,
-  background: "#94a3b8",
-  border: "2px solid #f8fafc",
+  ...NODE_HANDLE_STYLE,
 };
 
 export default function Sandbox() {

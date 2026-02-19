@@ -23,7 +23,7 @@ OutputNode.definition = {
   label: "Output",
   data: { label: "Output" },
 };
-OutputNode.accent = "#fff4f4";
-OutputNode.color = "#ffc1c1";
+OutputNode.accent = "#ff0000";
+OutputNode.color = "#ffffff";
 
 export default OutputNode;

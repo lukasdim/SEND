@@ -18,7 +18,6 @@ type NodeComponent = ((props: NodeProps<EPSNodeData>) => JSX.Element) & {
 
 export type EPSExtraData = {
   ticker: string;
-  value: number | null;
 };
 
 export type EPSNodeData = NodeData<EPSExtraData>;
@@ -26,8 +25,8 @@ export type EPSNodeData = NodeData<EPSExtraData>;
 const EPSNode: NodeComponent = function EPSNode({ id, data }: NodeProps<EPSNodeData>) {
   const { setNodes } = useReactFlow();
   const extra = useMemo<EPSExtraData>(
-    () => ({ ticker: data.extra?.ticker ?? "", value: data.extra?.value ?? null }),
-    [data.extra?.ticker, data.extra?.value]
+    () => ({ ticker: data.extra?.ticker ?? "" }),
+    [data.extra?.ticker,]
   );
 
   const setExtra = (patch: Partial<EPSExtraData>) => {
@@ -41,7 +40,6 @@ const EPSNode: NodeComponent = function EPSNode({ id, data }: NodeProps<EPSNodeD
             ...nodeData,
             extra: {
               ticker: nodeData.extra?.ticker ?? "",
-              value: nodeData.extra?.value ?? null,
               ...patch,
             },
           },
@@ -52,31 +50,13 @@ const EPSNode: NodeComponent = function EPSNode({ id, data }: NodeProps<EPSNodeD
 
   return (
     <BaseNode data={data} accent={EPSNode.accent} color={EPSNode.color}>
-      <div style={{ display: "flex", gap: 8, width: "100%" }}>
+      <div style={{ display: "flex", gap: 8, width: "100%", color: "black" }}>
         <input
           className="nodrag"
           type="text"
           placeholder="Ticker"
           value={extra.ticker}
           onChange={(event) => setExtra({ ticker: event.target.value.toUpperCase() })}
-          style={inputStyle}
-        />
-        <input
-          className="nodrag"
-          type="number"
-          step="0.01"
-          placeholder="Value"
-          value={extra.value ?? ""}
-          onChange={(event) => {
-            const raw = event.target.value.trim();
-            if (raw === "") {
-              setExtra({ value: null });
-              return;
-            }
-
-            const parsed = Number.parseFloat(raw);
-            setExtra({ value: Number.isFinite(parsed) ? parsed : null });
-          }}
           style={inputStyle}
         />
       </div>
@@ -87,10 +67,10 @@ const EPSNode: NodeComponent = function EPSNode({ id, data }: NodeProps<EPSNodeD
 EPSNode.definition = {
   type: "eps",
   label: "EPS",
-  data: { label: "EPS", extra: { ticker: "", value: null } },
+  data: { label: "EPS", extra: { ticker: "" } },
 };
-EPSNode.accent = "#16a34a";
-EPSNode.color = "#bee9ff";
+EPSNode.accent = "#0044ff";
+EPSNode.color = "#ffffff";
 
 const inputStyle: React.CSSProperties = {
   flex: 1,
@@ -102,6 +82,7 @@ const inputStyle: React.CSSProperties = {
   lineHeight: 1.2,
   outline: "none",
   background: "white",
+  color: "black"
 };
 
 export default EPSNode;

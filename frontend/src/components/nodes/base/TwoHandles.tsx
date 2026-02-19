@@ -1,24 +1,18 @@
 import { Handle, Position } from "reactflow";
+import {
+  NODE_BODY_PADDING,
+  NODE_CARD_BORDER,
+  NODE_CARD_RADIUS,
+  NODE_HANDLE_STYLE,
+  NODE_TITLE_ALPHA,
+  NODE_TITLE_PADDING,
+  withAlpha,
+} from "./nodeCardStyle";
 
 export type NodeData<TExtra = Record<string, unknown>> = {
   label: string;
   extra?: TExtra;
 };
-
-const handleStyle: React.CSSProperties = {
-  width: 14,
-  height: 14,
-  borderRadius: 999,
-  background: "#94a3b8",
-  border: "2px solid #f8fafc",
-};
-
-function translucent(color: string, alphaHex: string): string {
-  if (color.startsWith("#") && color.length === 7) {
-    return `${color}${alphaHex}`;
-  }
-  return color;
-}
 
 export default function BaseNode({
   data,
@@ -37,8 +31,8 @@ export default function BaseNode({
     <div
       style={{
         width: "100%",
-        border: "1px solid #d1d5db",
-        borderRadius: 20,
+        border: NODE_CARD_BORDER,
+        borderRadius: NODE_CARD_RADIUS,
         background: color,
         fontFamily: "system-ui, sans-serif",
         display: "flex",
@@ -50,13 +44,13 @@ export default function BaseNode({
       <Handle
         type="target"
         position={Position.Left}
-        style={{ ...handleStyle, left: -8 }}
+        style={{ ...NODE_HANDLE_STYLE, left: -8 }}
       />
 
       <div
         style={{
-          padding: "14px 16px",
-          background: translucent(accent, "1A"),
+          padding: NODE_TITLE_PADDING,
+          background: withAlpha(accent, NODE_TITLE_ALPHA),
           borderBottom: hasBody ? "1px solid #e5e7eb" : undefined,
         }}
       >
@@ -66,7 +60,7 @@ export default function BaseNode({
       </div>
 
       {hasBody && (
-        <div style={{ padding: "14px 16px", display: "flex", alignItems: "center" }}>
+        <div style={{ padding: NODE_BODY_PADDING, display: "flex", alignItems: "center" }}>
           {children}
         </div>
       )}
@@ -74,7 +68,7 @@ export default function BaseNode({
       <Handle
         type="source"
         position={Position.Right}
-        style={{ ...handleStyle, right: -8 }}
+        style={{ ...NODE_HANDLE_STYLE, right: -8 }}
       />
     </div>
   );

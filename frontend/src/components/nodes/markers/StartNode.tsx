@@ -23,7 +23,7 @@ StartNode.definition = {
   label: "Start",
   data: { label: "Start" },
 };
-StartNode.accent = "#eeffec";
-StartNode.color = "#d0fccb";
+StartNode.accent = "#1aff00";
+StartNode.color = "#ffffff";
 
 export default StartNode;

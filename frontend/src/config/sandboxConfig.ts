@@ -8,5 +8,6 @@ const SANDBOX_STRATEGIES_API_BASE = "http://localhost:8080";
 export const SANDBOX_STRATEGIES_API = {
   baseUrl: SANDBOX_STRATEGIES_API_BASE,
   listStrategiesUrl: `${SANDBOX_STRATEGIES_API_BASE}/api/strategies`,
-  strategyByIdUrl: `${SANDBOX_STRATEGIES_API_BASE}/api/strategy`
+  strategyByIdUrl: (strategyId: string) =>
+    `${SANDBOX_STRATEGIES_API_BASE}/api/strategies/${encodeURIComponent(strategyId)}`,
 };

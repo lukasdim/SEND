@@ -1,5 +1,7 @@
 package dev.send.api.web.strategy.dto;
 
-public class EdgeDto {
-    
-}
+public record EdgeDto(
+    String id,
+    String source,
+    String target
+) {}

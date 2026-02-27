@@ -5,12 +5,13 @@ import org.springframework.web.bind.annotation.*;
 import dev.send.api.web.strategy.dto.GraphDto;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 @RequestMapping("/api/strategies")
 public class StrategyController {
 
-    private final Map<String, GraphDto> store = new HashMap<>();
+    private final Map<String, GraphDto> store = new ConcurrentHashMap<>();
 
     @GetMapping
     public Collection<GraphDto> getAll() {
@@ -21,5 +22,10 @@ public class StrategyController {
     public GraphDto create(@RequestBody GraphDto strategy) {
         store.put(strategy.id(), strategy);
         return strategy;
+    }
+
+    @GetMapping("/{id}")
+    public GraphDto getStrategy(@PathVariable String id) {
+        return store.get(id);
     }
 }

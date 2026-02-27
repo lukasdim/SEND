@@ -64,6 +64,12 @@ type GraphPayload = {
   edges: GraphEdgePayload[];
 };
 
+type BackendGraphDto = {
+  id: string;
+  nodes: unknown[];
+  edges: unknown[];
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -233,6 +239,7 @@ function SandboxInner() {
   const [currentStrategyId, setCurrentStrategyId] = useState<string | null>(null);
   const [currentStrategyName, setCurrentStrategyName] = useState<string | null>(null);
   const [isStrategyLoading, setIsStrategyLoading] = useState(false);
+  const [isStrategySaving, setIsStrategySaving] = useState(false);
   const timeoutRef = useRef<number | null>(null);
 
   const notifyError = useCallback((message: string) => {
@@ -308,19 +315,13 @@ function SandboxInner() {
           throw new Error(`Failed to fetch strategies (${response.status})`);
         }
 
-        const payload = (await response.json()) as { strategies?: unknown };
-        const nextStrategies = Array.isArray(payload.strategies)
-          ? payload.strategies.flatMap((strategy) => {
+        const payload = (await response.json()) as unknown;
+        const nextStrategies = Array.isArray(payload)
+          ? payload.flatMap((strategy) => {
               if (!isRecord(strategy)) return [];
-              const { id, lastEdited, name } = strategy;
-              if (
-                typeof id !== "string" ||
-                typeof name !== "string" ||
-                typeof lastEdited !== "string"
-              ) {
-                return [];
-              }
-              return [{ id, name, lastEdited }];
+              const { id } = strategy;
+              if (typeof id !== "string" || id.length === 0) return [];
+              return [{ id, name: id, lastEdited: "-" }];
             })
           : [];
 
@@ -362,6 +363,7 @@ function SandboxInner() {
         }
 
         const payload = (await response.json()) as {
+          id?: unknown;
           nodes?: unknown;
           edges?: unknown;
         };
@@ -373,12 +375,15 @@ function SandboxInner() {
           if (!isRecord(rawNode)) return [];
 
           const { data, id, position, type } = rawNode;
-          if (!isRecord(position)) return [];
+          const finalPosition =
+            isRecord(position) && typeof position.x === "number" && typeof position.y === "number"
+              ? { x: position.x, y: position.y }
+              : null;
+
           if (
             typeof id !== "string" ||
             typeof type !== "string" ||
-            typeof position.x !== "number" ||
-            typeof position.y !== "number"
+            !finalPosition
           ) {
             return [];
           }
@@ -402,7 +407,7 @@ function SandboxInner() {
             {
               id,
               type: flowNodeType,
-              position: { x: position.x, y: position.y },
+              position: finalPosition,
               data: nextData,
               style: { width: SANDBOX_NODE_WIDTH, color: "black" },
             },
@@ -428,7 +433,7 @@ function SandboxInner() {
 
         setNodes(loadedNodes);
         setEdges(loadedEdges);
-        setCurrentStrategyId(strategy.id);
+        setCurrentStrategyId(typeof payload.id === "string" ? payload.id : strategy.id);
         setCurrentStrategyName(strategy.name);
         setPendingPointerNodeType(null);
         window.requestAnimationFrame(() => {
@@ -559,6 +564,42 @@ function SandboxInner() {
     setPendingPointerNodeType(null);
   }, []);
 
+  const onSaveStrategy = useCallback(async () => {
+    if (nodes.length === 0) {
+      notifyError("Add at least one node before saving a strategy.");
+      return;
+    }
+
+    setIsStrategySaving(true);
+    try {
+      const strategyName = currentStrategyName ?? SANDBOX_DEFAULT_UNTITLED_STRATEGY_NAME;
+      const strategyId = currentStrategyId ?? `s-${crypto.randomUUID()}`;
+
+      const payload: BackendGraphDto = {
+        id: strategyId,
+        nodes: graphDatabase.nodes as unknown[],
+        edges: graphDatabase.edges as unknown[],
+      };
+
+      const response = await fetch(SANDBOX_STRATEGIES_API.listStrategiesUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to save strategy (${response.status})`);
+      }
+
+      setCurrentStrategyId(strategyId);
+      setCurrentStrategyName(strategyName);
+    } catch {
+      notifyError("Could not save strategy. Please try again.");
+    } finally {
+      setIsStrategySaving(false);
+    }
+  }, [currentStrategyId, currentStrategyName, graphDatabase, nodes.length, notifyError]);
+
   return (
     <div
       style={{
@@ -668,88 +709,106 @@ function SandboxInner() {
           fontFamily: "system-ui, sans-serif",
           boxSizing: "border-box",
           overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
         }}
       >
-        <div style={{ fontWeight: 700, marginBottom: 10 }}>Strategies</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>Strategies</div>
 
-        <div
-          style={{
-            marginBottom: 12,
-            padding: "8px 10px",
-            border: "1px solid #e5e7eb",
-            borderRadius: 8,
-            background: "#f9fafb",
-          }}
-        >
-          <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>Active</div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>
-            {currentStrategyName ?? "No strategy loaded"}
+          <div
+            style={{
+              marginBottom: 12,
+              padding: "8px 10px",
+              border: "1px solid #e5e7eb",
+              borderRadius: 8,
+              background: "#f9fafb",
+            }}
+          >
+            <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>Active</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>
+              {currentStrategyName ?? "No strategy loaded"}
+            </div>
+            {currentStrategyId && (
+              <div style={{ marginTop: 2, fontSize: 11, color: "#6b7280" }}>ID: {currentStrategyId}</div>
+            )}
           </div>
-          {currentStrategyId && (
-            <div style={{ marginTop: 2, fontSize: 11, color: "#6b7280" }}>ID: {currentStrategyId}</div>
+
+          {nodes.length === 0 ? (
+            <>
+              {isStrategiesLoading && (
+                <div style={{ fontSize: 12, color: "#6b7280" }}>Loading previous strategies...</div>
+              )}
+
+              {!isStrategiesLoading && strategiesError && (
+                <>
+                  <div style={{ fontSize: 12, color: "#991b1b", marginBottom: 8 }}>{strategiesError}</div>
+                  <button type="button" onClick={() => void fetchStrategies()} style={toolbarButtonStyle}>
+                    Retry
+                  </button>
+                </>
+              )}
+
+              {!isStrategiesLoading && !strategiesError && strategies.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {strategies.map((strategy) => (
+                    <button
+                      key={strategy.id}
+                      type="button"
+                      onClick={() => void loadStrategy(strategy)}
+                      disabled={isStrategyLoading}
+                      style={{
+                        ...strategyCardButtonStyle,
+                        borderColor: currentStrategyId === strategy.id ? "#93c5fd" : "#e5e7eb",
+                        background: currentStrategyId === strategy.id ? "#eff6ff" : "white",
+                        opacity: isStrategyLoading ? 0.7 : 1,
+                        cursor: isStrategyLoading ? "wait" : "pointer",
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, fontSize: 13, color: "#111827" }}>{strategy.name}</div>
+                      <div style={{ marginTop: 4, fontSize: 11, color: "#6b7280" }}>
+                        Last edited: {formatLastEdited(strategy.lastEdited)}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {!isStrategiesLoading && !strategiesError && strategies.length === 0 && (
+                <>
+                  <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>
+                    No previous strategies found.
+                  </div>
+                  <button type="button" onClick={onCreateStrategy} style={toolbarButtonStyle}>
+                    Create strategy
+                  </button>
+                </>
+              )}
+
+              {isStrategyLoading && (
+                <div style={{ marginTop: 10, fontSize: 12, color: "#6b7280" }}>Loading graph...</div>
+              )}
+            </>
+          ) : (
+            <div style={{ fontSize: 12, color: "#6b7280" }}>
+              This graph is ready. Add nodes or edges to continue editing.
+            </div>
           )}
         </div>
 
-        {nodes.length === 0 ? (
-          <>
-            {isStrategiesLoading && (
-              <div style={{ fontSize: 12, color: "#6b7280" }}>Loading previous strategies...</div>
-            )}
-
-            {!isStrategiesLoading && strategiesError && (
-              <>
-                <div style={{ fontSize: 12, color: "#991b1b", marginBottom: 8 }}>{strategiesError}</div>
-                <button type="button" onClick={() => void fetchStrategies()} style={toolbarButtonStyle}>
-                  Retry
-                </button>
-              </>
-            )}
-
-            {!isStrategiesLoading && !strategiesError && strategies.length > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {strategies.map((strategy) => (
-                  <button
-                    key={strategy.id}
-                    type="button"
-                    onClick={() => void loadStrategy(strategy)}
-                    disabled={isStrategyLoading}
-                    style={{
-                      ...strategyCardButtonStyle,
-                      borderColor: currentStrategyId === strategy.id ? "#93c5fd" : "#e5e7eb",
-                      background: currentStrategyId === strategy.id ? "#eff6ff" : "white",
-                      opacity: isStrategyLoading ? 0.7 : 1,
-                      cursor: isStrategyLoading ? "wait" : "pointer",
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, fontSize: 13, color: "#111827" }}>{strategy.name}</div>
-                    <div style={{ marginTop: 4, fontSize: 11, color: "#6b7280" }}>
-                      Last edited: {formatLastEdited(strategy.lastEdited)}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {!isStrategiesLoading && !strategiesError && strategies.length === 0 && (
-              <>
-                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>
-                  No previous strategies found.
-                </div>
-                <button type="button" onClick={onCreateStrategy} style={toolbarButtonStyle}>
-                  Create strategy
-                </button>
-              </>
-            )}
-
-            {isStrategyLoading && (
-              <div style={{ marginTop: 10, fontSize: 12, color: "#6b7280" }}>Loading graph...</div>
-            )}
-          </>
-        ) : (
-          <div style={{ fontSize: 12, color: "#6b7280" }}>
-            This graph is ready. Add nodes or edges to continue editing.
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={() => void onSaveStrategy()}
+          disabled={isStrategySaving}
+          style={{
+            ...toolbarButtonStyle,
+            marginTop: 12,
+            opacity: isStrategySaving ? 0.7 : 1,
+            cursor: isStrategySaving ? "wait" : "pointer",
+          }}
+        >
+          {isStrategySaving ? "Saving strategy..." : "Save strategy"}
+        </button>
       </div>
     </div>
   );

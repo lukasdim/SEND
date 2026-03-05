@@ -10,14 +10,14 @@ public abstract class Node {
     private final String id;
     private final Position position;
     // inputValues may be explicitely typed or connected in the UI. 
-    private final Value[] inputValues;
+    private Value[] inputValues;
 
-    public Node(String id, Position pos, Value[] inputValues) {
+    public Node(String id, Position pos) {
         this.position = pos;
         this.id = id;
-        // Perform inputValues validation check here (matches inputs() indices)
-        this.inputValues = inputValues;
     }
+
+    public abstract Value[] execute(@Nullable Value[] inputValues);
 
     // Used to descript inputValues and where to find each value.
     @Nullable public abstract Port<? extends Value>[] inputs();

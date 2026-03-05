@@ -2,6 +2,7 @@ plugins {
 	id 'java'
 	id 'org.springframework.boot' version '3.5.11'
 	id 'io.spring.dependency-management' version '1.1.7'
+	id 'net.ltgt.errorprone' version '4.3.0'
 }
 
 group = 'dev.send'
@@ -21,10 +22,21 @@ repositories {
 dependencies {
 	//implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
+	compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
+	errorprone 'com.google.errorprone:error_prone_core:2.31.0'
+	errorprone 'com.uber.nullaway:nullaway:0.12.3'
+	//implementation 'com.google.guava:guava:33.5.0-jre' for multimap if needed
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 tasks.named('test') {
 	useJUnitPlatform()
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.errorprone {
+		check('NullAway', net.ltgt.gradle.errorprone.CheckSeverity.ERROR)
+		option('NullAway:AnnotatedPackages', 'dev.send.api')
+	}
 }

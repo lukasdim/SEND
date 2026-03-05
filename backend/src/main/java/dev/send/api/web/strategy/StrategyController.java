@@ -1,6 +1,7 @@
 package dev.send.api.web.strategy;
 
 import org.springframework.web.bind.annotation.*;
+import javax.annotation.Nullable;
 
 import dev.send.api.web.strategy.dto.GraphDto;
 
@@ -25,6 +26,7 @@ public class StrategyController {
     }
 
     @GetMapping("/{id}")
+    @Nullable
     public GraphDto getStrategy(@PathVariable String id) {
         return store.get(id);
     }

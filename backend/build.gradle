@@ -3,6 +3,7 @@ plugins {
 	id 'org.springframework.boot' version '3.5.11'
 	id 'io.spring.dependency-management' version '1.1.7'
 	id 'net.ltgt.errorprone' version '4.3.0'
+	id 'com.diffplug.spotless' version '6.25.0'
 }
 
 group = 'dev.send'
@@ -38,5 +39,15 @@ tasks.withType(JavaCompile).configureEach {
 	options.errorprone {
 		check('NullAway', net.ltgt.gradle.errorprone.CheckSeverity.ERROR)
 		option('NullAway:AnnotatedPackages', 'dev.send.api')
+	}
+}
+
+spotless {
+	java {
+		target 'src/**/*.java'
+		googleJavaFormat()
+		removeUnusedImports()
+		trimTrailingWhitespace()
+		endWithNewline()
 	}
 }

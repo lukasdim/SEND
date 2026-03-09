@@ -3,6 +3,7 @@ package dev.send.api.web.strategy;
 import org.springframework.web.bind.annotation.*;
 import javax.annotation.Nullable;
 
+import dev.send.api.domain.strategy.node.NodeIoRegistry;
 import dev.send.api.web.strategy.dto.GraphDto;
 
 import java.util.*;
@@ -29,5 +30,10 @@ public class StrategyController {
     @Nullable
     public GraphDto getStrategy(@PathVariable String id) {
         return store.get(id);
+    }
+
+    @GetMapping("/node-io")
+    public NodeIoRegistry.NodeIoCatalog getNodeIoCatalog() {
+        return NodeIoRegistry.asCatalog();
     }
 }

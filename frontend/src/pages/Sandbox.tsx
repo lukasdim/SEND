@@ -15,11 +15,9 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import {
-  getDefaultNodeData,
-  getNodeVisual,
-  isSupportedNodeType,
-  nodePalette,
-  nodeTypes,
+  createEmptyNodeRegistry,
+  createNodeRegistry,
+  type NodePaletteItem,
 } from "../components/nodes/NodeTypes";
 import {
   NODE_CARD_BORDER,
@@ -36,6 +34,7 @@ import {
   SANDBOX_NOTIFICATION_TIMEOUT_MS,
   SANDBOX_STRATEGIES_API,
 } from "../config/sandboxConfig";
+import { fetchNodeIoCatalog } from "../services/api";
 
 type StrategySummary = {
   id: string;
@@ -74,45 +73,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function toSerializableNodeType(type: string | undefined): string {
-  if (type === "outputNode") return "output";
-  return type ?? "unknown";
-}
-
-function toFlowNodeType(type: string): string | undefined {
-  if (type === "output") return "outputNode";
-  if (isSupportedNodeType(type)) return type;
-  return undefined;
-}
-
 function formatLastEdited(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
 }
 
-function hasLeftHandle(type: string | undefined): boolean {
-  return type === "eps" || type === "outputNode";
-}
-
-function hasRightHandle(type: string | undefined): boolean {
-  return type === "eps" || type === "start";
-}
-
-function getPreviewVisual(type: string): {
-  border: string;
-  background: string;
-  accent: string;
-} {
-  const visual = getNodeVisual(type);
-  if (!visual) return { border: NODE_CARD_BORDER, background: "white", accent: "#16a34a" };
-  return { border: NODE_CARD_BORDER, background: visual.color, accent: visual.accent };
-}
-
-function NodeTemplatePreview({ type }: { type: string }) {
-  const previewData = getDefaultNodeData(type);
+function NodeTemplatePreview({
+  node,
+  getDefaultNodeData,
+  getNodeVisual,
+}: {
+  node: NodePaletteItem;
+  getDefaultNodeData: (type: string) => { label: string; extra?: Record<string, unknown> } | undefined;
+  getNodeVisual: (type: string) => { accent: string; color: string } | undefined;
+}) {
+  const previewData = getDefaultNodeData(node.type);
   if (!previewData) return null;
-  const visual = getPreviewVisual(type);
+  const visual = getNodeVisual(node.type) ?? {
+    accent: "#16a34a",
+    color: "white",
+  };
   const extra = previewData.extra ?? {};
   const extraEntries = Object.entries(extra as Record<string, unknown>);
   const hasBody = extraEntries.length > 0;
@@ -122,9 +103,9 @@ function NodeTemplatePreview({ type }: { type: string }) {
       style={{
         width: "100%",
         padding: 0,
-        border: visual.border,
+        border: NODE_CARD_BORDER,
         borderRadius: NODE_CARD_RADIUS,
-        background: visual.background,
+        background: visual.color,
         fontFamily: "system-ui, sans-serif",
         display: "flex",
         flexDirection: "column",
@@ -134,7 +115,7 @@ function NodeTemplatePreview({ type }: { type: string }) {
         color: "black",
       }}
     >
-      {hasLeftHandle(type) && <div style={previewLeftHandleStyle} />}
+      {node.inputCount > 0 && <div style={previewLeftHandleStyle} />}
       <div
         style={{
           padding: NODE_TITLE_PADDING,
@@ -160,7 +141,7 @@ function NodeTemplatePreview({ type }: { type: string }) {
           ))}
         </div>
       )}
-      {hasRightHandle(type) && <div style={previewRightHandleStyle} />}
+      {node.outputCount > 0 && <div style={previewRightHandleStyle} />}
     </div>
   );
 }
@@ -231,6 +212,8 @@ function ErrorNotification({ message }: { message: string }) {
 
 function SandboxInner() {
   const { fitView, screenToFlowPosition } = useReactFlow();
+  const [nodeRegistry, setNodeRegistry] = useState(() => createEmptyNodeRegistry());
+  const [isNodeCatalogLoading, setIsNodeCatalogLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [pendingPointerNodeType, setPendingPointerNodeType] = useState<string | null>(null);
   const [strategies, setStrategies] = useState<StrategySummary[]>([]);
@@ -241,6 +224,14 @@ function SandboxInner() {
   const [isStrategyLoading, setIsStrategyLoading] = useState(false);
   const [isStrategySaving, setIsStrategySaving] = useState(false);
   const timeoutRef = useRef<number | null>(null);
+
+  const {
+    nodePalette,
+    nodeTypes,
+    isSupportedNodeType,
+    getDefaultNodeData,
+    getNodeVisual,
+  } = nodeRegistry;
 
   const notifyError = useCallback((message: string) => {
     if (timeoutRef.current !== null) {
@@ -261,6 +252,26 @@ function SandboxInner() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    const loadNodeCatalog = async () => {
+      setIsNodeCatalogLoading(true);
+      try {
+        const catalog = await fetchNodeIoCatalog(abortController.signal);
+        setNodeRegistry(createNodeRegistry(catalog));
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notifyError("Could not load node catalog from backend.");
+      } finally {
+        setIsNodeCatalogLoading(false);
+      }
+    };
+
+    void loadNodeCatalog();
+    return () => abortController.abort();
+  }, [notifyError]);
 
   const initialNodes: Node[] = useMemo(() => [], []);
   const initialEdges: Edge[] = useMemo(() => [], []);
@@ -285,7 +296,7 @@ function SandboxInner() {
 
         return {
           id: node.id,
-          type: toSerializableNodeType(node.type),
+          type: node.type ?? "unknown",
           position: {
             x: Math.round(node.position.x - minX),
             y: Math.round(node.position.y - minY),
@@ -339,6 +350,7 @@ function SandboxInner() {
   );
 
   useEffect(() => {
+    if (isNodeCatalogLoading) return;
     if (nodes.length > 0) return;
 
     const abortController = new AbortController();
@@ -346,7 +358,7 @@ function SandboxInner() {
     return () => {
       abortController.abort();
     };
-  }, [fetchStrategies, nodes.length]);
+  }, [fetchStrategies, isNodeCatalogLoading, nodes.length]);
 
   const loadStrategy = useCallback(
     async (strategy: StrategySummary) => {
@@ -388,10 +400,9 @@ function SandboxInner() {
             return [];
           }
 
-          const flowNodeType = toFlowNodeType(type);
-          if (!flowNodeType) return [];
+          if (!isSupportedNodeType(type)) return [];
 
-          const baseData = getDefaultNodeData(flowNodeType);
+          const baseData = getDefaultNodeData(type);
           if (!baseData) return [];
 
           const mergedExtra = {
@@ -406,7 +417,7 @@ function SandboxInner() {
           return [
             {
               id,
-              type: flowNodeType,
+              type,
               position: finalPosition,
               data: nextData,
               style: { width: SANDBOX_NODE_WIDTH, color: "black" },
@@ -445,7 +456,7 @@ function SandboxInner() {
         setIsStrategyLoading(false);
       }
     },
-    [fitView, notifyError, setEdges, setNodes]
+    [fitView, getDefaultNodeData, isSupportedNodeType, notifyError, setEdges, setNodes]
   );
 
   const onConnect = useCallback(
@@ -469,18 +480,6 @@ function SandboxInner() {
         return false;
       }
 
-      if (type === "start" || type === "outputNode") {
-        const hasExistingSingleton = nodes.some((node) => node.type === type);
-        if (hasExistingSingleton) {
-          notifyError(
-            type === "start"
-              ? "Only one Start node is allowed in the canvas."
-              : "Only one Output node is allowed in the canvas."
-          );
-          return false;
-        }
-      }
-
       const newNode: Node = {
         id: `n-${crypto.randomUUID()}`,
         type,
@@ -496,7 +495,7 @@ function SandboxInner() {
       }
       return true;
     },
-    [nodes, notifyError, setNodes]
+    [getDefaultNodeData, isSupportedNodeType, nodes, notifyError, setNodes]
   );
 
   const onDragStart = (event: React.DragEvent, nodeType: string) => {
@@ -644,15 +643,21 @@ function SandboxInner() {
               onPointerDown={(e) => onTemplatePointerDown(e, node.type)}
               style={nodeTemplateDraggableStyle}
             >
-              <NodeTemplatePreview type={node.type} />
+              <NodeTemplatePreview
+                node={node}
+                getDefaultNodeData={getDefaultNodeData}
+                getNodeVisual={getNodeVisual}
+              />
             </div>
           </div>
         ))}
 
         <div style={{ marginTop: 16, fontSize: 12, color: "#6b7280" }}>
-          Drag a node onto the canvas.
+          {isNodeCatalogLoading ? "Loading node types..." : "Drag a node onto the canvas."}
           <br />
-          (Edges will work after we add node handles.)
+          {isNodeCatalogLoading
+            ? "Node palette is populated from backend metadata."
+            : "Handles and inputs are generated from backend metadata."}
         </div>
 
         {pendingPointerNodeType && (

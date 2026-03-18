@@ -1,110 +1,160 @@
 package dev.send.api.domain.strategy.node;
 
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
-import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
-import org.springframework.core.type.filter.AssignableTypeFilter;
+import javax.annotation.Nullable;
 
-import dev.send.api.domain.strategy.Node;
-import dev.send.api.domain.strategy.port.Port;
-import dev.send.api.domain.strategy.type.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import dev.send.api.domain.strategy.spec.NodeSpec;
+import dev.send.api.domain.strategy.spec.NodeSpecSet;
+
+/**
+ * Temporary registry shell for the frontend node catalog.
+ *
+ * <p>This registry no longer scans Java node classes. Instead, it is prepared to
+ * map future JSON-backed node specs into the catalog shape currently consumed by
+ * the frontend.
+ */
 public final class NodeIoRegistry {
-    private static final String NODE_PACKAGE = "dev.send.api.domain.strategy.node";
-    private static final String SPEC_METHOD = "spec";
+    private static final String NODE_SPECS_PATTERN = "classpath*:node-specs/**/*.json";
+    private static final String NODE_SPECS_ROOT = "node-specs/";
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private NodeIoRegistry() {}
 
-    public static List<NodeIo> allNodeIo() {
-        ClassPathScanningCandidateComponentProvider scanner =
-                new ClassPathScanningCandidateComponentProvider(false);
-        scanner.addIncludeFilter(new AssignableTypeFilter(Node.class));
-
-        List<NodeIo> all = new ArrayList<>();
-
-        for (var beanDef : scanner.findCandidateComponents(NODE_PACKAGE)) {
-            try {
-                Class<?> candidate = Class.forName(beanDef.getBeanClassName());
-                if (!Node.class.isAssignableFrom(candidate)) {
-                    continue;
-                }
-                if (Modifier.isAbstract(candidate.getModifiers())) {
-                    continue;
-                }
-
-                @SuppressWarnings("unchecked")
-                Class<? extends Node> nodeClass = (Class<? extends Node>) candidate;
-                NodePortSpec spec = readSpec(nodeClass);
-                all.add(new NodeIo(nodeClass, spec.inputs(), spec.outputs()));
-            } catch (ClassNotFoundException e) {
-                throw new IllegalStateException("Failed to load node class while scanning registry", e);
-            }
-        }
-
-        all.sort(Comparator.comparing(nodeIo -> nodeIo.nodeClass().getName()));
-        return List.copyOf(all);
+    public static NodeIoCatalog asCatalog() {
+        return asCatalog(loadAllNodeSpecs());
     }
 
-    public static NodeIoCatalog asCatalog() {
-        List<NodeIoDto> nodes = allNodeIo().stream()
-                .map(nodeIo -> new NodeIoDto(
-                        nodeIo.nodeClass().getSimpleName(),
-                        nodeIo.nodeClass().getName(),
-                        toPortDtos(nodeIo.inputs()),
-                        toPortDtos(nodeIo.outputs())))
+    public static NodeIoCatalog asCatalog(List<? extends NodeSpec> specs) {
+        List<NodeIoDto> nodes = specs.stream()
+                .map(spec -> {
+                    Object rawInputs = spec.payload().get("inputs");
+                    Object rawOutputs = spec.payload().get("outputs");
+                    return new NodeIoDto(
+                            spec.nodeType(),
+                            spec.set().name(),
+                            toPortDtos(rawInputs),
+                            toPortDtos(rawOutputs));
+                })
                 .toList();
         return new NodeIoCatalog(nodes);
     }
 
-    private static NodePortSpec readSpec(Class<? extends Node> nodeClass) {
+    private static List<NodeSpec> loadAllNodeSpecs() {
+        PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
         try {
-            Method method = nodeClass.getMethod(SPEC_METHOD);
-            if (!Modifier.isStatic(method.getModifiers())) {
-                throw new IllegalStateException(
-                        String.format("%s.%s must be static", nodeClass.getName(), SPEC_METHOD));
+            Resource[] resources = resolver.getResources(NODE_SPECS_PATTERN);
+            List<NodeSpec> specs = new ArrayList<>(resources.length);
+            for (Resource resource : resources) {
+                if (!resource.exists() || !resource.isReadable()) {
+                    continue;
+                }
+                specs.add(readNodeSpec(resource));
             }
-            if (method.getParameterCount() != 0) {
-                throw new IllegalStateException(
-                        String.format("%s.%s must have no arguments", nodeClass.getName(), SPEC_METHOD));
-            }
+            specs.sort(Comparator
+                    .comparing((NodeSpec spec) -> spec.set().name())
+                    .thenComparing(NodeSpec::nodeType));
+            return List.copyOf(specs);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to scan node-specs resources", e);
+        }
+    }
 
-            Object raw = method.invoke(null);
-            if (!(raw instanceof NodePortSpec spec)) {
-                throw new IllegalStateException(
-                        String.format("%s.%s must return NodePortSpec", nodeClass.getName(), SPEC_METHOD));
+    private static NodeSpec readNodeSpec(Resource resource) {
+        try (InputStream inputStream = resource.getInputStream()) {
+            Map<String, Object> payload = OBJECT_MAPPER.readValue(inputStream, MAP_TYPE);
+            String nodeType = toStringValue(payload.get("nodeType"));
+            if (nodeType.isBlank()) {
+                throw new IllegalStateException("Node spec is missing nodeType: " + resource.getDescription());
             }
-            return spec;
-        } catch (NoSuchMethodException e) {
+            return new NodeSpec(nodeType, inferSet(resource, payload), payload);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to read node spec: " + resource.getDescription(), e);
+        }
+    }
+
+    private static NodeSpecSet inferSet(Resource resource, Map<String, Object> payload) {
+        String path = resourcePath(resource);
+        int rootIndex = path.indexOf(NODE_SPECS_ROOT);
+        if (rootIndex >= 0) {
+            String relative = path.substring(rootIndex + NODE_SPECS_ROOT.length()).replace('\\', '/');
+            int separatorIndex = relative.indexOf('/');
+            if (separatorIndex > 0) {
+                return toNodeSpecSet(relative.substring(0, separatorIndex), resource);
+            }
+        }
+
+        Object rawSet = payload.get("set");
+        if (rawSet instanceof String setName && !setName.isBlank()) {
+            return toNodeSpecSet(setName, resource);
+        }
+        throw new IllegalStateException("Could not infer node set for resource: " + resource.getDescription());
+    }
+
+    private static NodeSpecSet toNodeSpecSet(String rawSetName, Resource resource) {
+        try {
+            return NodeSpecSet.valueOf(rawSetName.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
             throw new IllegalStateException(
-                    String.format("%s is missing required method %s()", nodeClass.getName(), SPEC_METHOD),
-                    e);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(
-                    String.format("Cannot invoke method %s on %s", SPEC_METHOD, nodeClass.getName()),
+                    "Unsupported node set '" + rawSetName + "' in resource: " + resource.getDescription(),
                     e);
         }
     }
 
-    public record NodeIo(
-            Class<? extends Node> nodeClass,
-            Port<? extends Value>[] inputs,
-            Port<? extends Value>[] outputs) {}
+    private static String resourcePath(Resource resource) {
+        try {
+            return resource.getURL().toString();
+        } catch (IOException e) {
+            return resource.getDescription();
+        }
+    }
 
-    private static List<PortDto> toPortDtos(Port<? extends Value>[] ports) {
-        List<PortDto> out = new ArrayList<>(ports.length);
-        for (Port<? extends Value> port : ports) {
+    private static List<PortDto> toPortDtos(@Nullable Object rawPorts) {
+        if (!(rawPorts instanceof List<?> ports)) {
+            return List.of();
+        }
+
+        List<PortDto> out = new ArrayList<>(ports.size());
+        for (Object rawPort : ports) {
+            if (!(rawPort instanceof Map<?, ?> port)) {
+                continue;
+            }
+            Object rawIndex = port.get("index");
+            Object rawName = port.get("name");
+            Object rawArity = port.get("arity");
+            Object rawValueType = port.get("valueType");
             out.add(new PortDto(
-                    port.index(),
-                    port.name(),
-                    port.arity().name(),
-                    port.type().getSimpleName(),
-                    port.type().getName()));
+                    toInt(rawIndex),
+                    toStringValue(rawName),
+                    toStringValue(rawArity),
+                    toStringValue(rawValueType),
+                    toStringValue(rawValueType)));
         }
         return List.copyOf(out);
+    }
+
+    private static int toInt(@Nullable Object raw) {
+        if (raw instanceof Number number) {
+            return number.intValue();
+        }
+        return -1;
+    }
+
+    private static String toStringValue(@Nullable Object raw) {
+        return raw instanceof String value ? value : "";
     }
 
     public record NodeIoCatalog(List<NodeIoDto> nodes) {}

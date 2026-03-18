@@ -1,0 +1,15 @@
+{
+  "nodeType": "fetch_volume",
+  "set": "fetch",
+  "displayName": "Fetch Volume",
+  "description": "Fetches a volume value for a configured ticker.",
+  "inputs": [],
+  "outputs": [
+    { "index": 0, "name": "volume", "arity": "ONE", "valueType": "NumVal" }
+  ],
+  "dataFields": [
+    { "name": "ticker", "valueType": "StrVal", "required": true, "defaultValue": "SPY" },
+    { "name": "interval", "valueType": "StrVal", "required": true, "defaultValue": "1d" }
+  ],
+  "executorKey": "fetch_volume"
+}

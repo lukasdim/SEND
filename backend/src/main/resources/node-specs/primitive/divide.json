@@ -1,0 +1,15 @@
+{
+  "nodeType": "divide",
+  "set": "primitive",
+  "displayName": "Divide",
+  "description": "Divides the first number by the second.",
+  "inputs": [
+    { "index": 0, "name": "numerator", "arity": "ONE", "valueType": "NumVal" },
+    { "index": 1, "name": "denominator", "arity": "ONE", "valueType": "NumVal" }
+  ],
+  "outputs": [
+    { "index": 0, "name": "quotient", "arity": "ONE", "valueType": "NumVal" }
+  ],
+  "dataFields": [],
+  "executorKey": "divide"
+}

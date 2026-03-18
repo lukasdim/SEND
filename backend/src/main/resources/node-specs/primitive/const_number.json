@@ -1,0 +1,14 @@
+{
+  "nodeType": "const_number",
+  "set": "primitive",
+  "displayName": "Constant Number",
+  "description": "Outputs a configured numeric constant.",
+  "inputs": [],
+  "outputs": [
+    { "index": 0, "name": "value", "arity": "ONE", "valueType": "NumVal" }
+  ],
+  "dataFields": [
+    { "name": "value", "valueType": "NumVal", "required": true, "defaultValue": 0 }
+  ],
+  "executorKey": "const_number"
+}

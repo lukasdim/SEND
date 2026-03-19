@@ -53,14 +53,14 @@ let validate_executor_outputs node spec outputs =
                  node_id = node.Node.id;
                  port_index;
                })
-      | Some port_spec when Node.same_value_kind port_spec.value value -> None
+      | Some port_spec when Node.kind_matches_value port_spec.value_kind value -> None
       | Some port_spec ->
           Some
             (Engine_error.Invalid_executor_output_type
                {
                  node_id = node.id;
                  port_index;
-                 expected = port_spec.value;
+                 expected_kind = port_spec.value_kind;
                  actual = value;
                }))
     outputs

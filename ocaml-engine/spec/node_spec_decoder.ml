@@ -15,10 +15,24 @@ let get_list_field fields field_name =
   | Some _ -> Error (Spec_error.Invalid_field_type field_name)
   | None -> Error (Spec_error.Missing_field field_name)
 
+let get_bool_field_with_default fields field_name default =
+  match List.assoc_opt field_name fields with
+  | Some (`Bool value) -> Ok value
+  | Some _ -> Error (Spec_error.Invalid_field_type field_name)
+  | None -> Ok default
+
+let decode_runtime_value field_name = function
+  | `Int value -> Ok (Node.Number_value (float_of_int value))
+  | `Float value -> Ok (Node.Number_value value)
+  | `Bool value -> Ok (Node.Bool_value value)
+  | `String value -> Ok (Node.String_value value)
+  | _ -> Error (Spec_error.Invalid_field_type field_name)
+
 let decode_data_type = function
-  | "NumVal" -> Ok Node.number
-  | "BoolVal" -> Ok Node.bool
-  | "StrVal" -> Ok Node.string
+  | "NumVal" -> Ok Node.number_kind
+  | "BoolVal" -> Ok Node.bool_kind
+  | "StrVal" -> Ok Node.string_kind
+  | "Value" -> Ok Node.any_kind
   | value_type -> Error (Spec_error.Unknown_value_type value_type)
 
 let decode_port_spec = function
@@ -31,16 +45,24 @@ let decode_port_spec = function
       in
       let* name = get_string_field fields "name" in
       let* value_type = get_string_field fields "valueType" in
-      let* value = decode_data_type value_type in
-      Ok (Node.make_port_spec ~index ~name ~value)
+      let* value_kind = decode_data_type value_type in
+      Ok (Node.make_port_spec ~index ~name ~value_kind)
   | _ -> Error (Spec_error.Invalid_field_type "portSpec")
 
 let decode_data_field_spec = function
   | `Assoc fields ->
       let* name = get_string_field fields "name" in
       let* value_type = get_string_field fields "valueType" in
-      let* value = decode_data_type value_type in
-      Ok (Node.make_data_field_spec ~name ~value)
+      let* value_kind = decode_data_type value_type in
+      let* required = get_bool_field_with_default fields "required" false in
+      let* default_value =
+        match List.assoc_opt "defaultValue" fields with
+        | None -> Ok None
+        | Some value ->
+            let* decoded = decode_runtime_value "defaultValue" value in
+            Ok (Some decoded)
+      in
+      Ok (Node.make_data_field_spec ~name ~value_kind ~required ~default_value)
   | _ -> Error (Spec_error.Invalid_field_type "dataField")
 
 let decode_list decoder values =

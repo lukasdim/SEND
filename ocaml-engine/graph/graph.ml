@@ -41,35 +41,35 @@ let find_node_spec graph node_type =
 let node_spec_for_node node_specs_by_type (node : Node.t) =
   String_map.find_opt node.node_type node_specs_by_type
 
-let expected_port_type graph port_ref =
+let expected_port_kind graph port_ref =
   match find_node graph port_ref.Node.node_id with
   | None -> None
   | Some node -> (
       match find_node_spec graph node.node_type with
       | None -> None
       | Some spec ->
-          match Node.find_input_port_spec spec port_ref.port_index with
-          | Some port -> Some port.value
+          match Node.find_output_port_spec spec port_ref.port_index with
+          | Some port -> Some port.value_kind
           | None -> (
-              match Node.find_output_port_spec spec port_ref.port_index with
-              | Some port -> Some port.value
+              match Node.find_input_port_spec spec port_ref.port_index with
+              | Some port -> Some port.value_kind
               | None -> None))
 
 let port_value graph port_ref =
   Node.Port_ref_map.find_opt port_ref graph.port_values
 
 let set_port_value graph port_ref value =
-  match expected_port_type graph port_ref with
-  | Some expected_value when Node.same_value_kind expected_value value ->
+  match expected_port_kind graph port_ref with
+  | Some expected_kind when Node.kind_matches_value expected_kind value ->
       graph.port_values <- Node.Port_ref_map.add port_ref value graph.port_values;
       Ok ()
-  | Some expected_value ->
+  | Some expected_kind ->
       Error
         [
           Graph_error.Invalid_port_value
             {
               port = port_ref;
-              expected_value;
+              expected_kind;
               actual_value = value;
             };
         ]
@@ -131,14 +131,14 @@ let validate_node_data_fields node_specs_by_type nodes =
                          node_id = node.id;
                          field_name = field.name;
                        })
-              | Some field_spec when Node.same_value_kind field_spec.value field.value -> None
+              | Some field_spec when Node.kind_matches_value field_spec.value_kind field.value -> None
               | Some field_spec ->
                   Some
                     (Graph_error.Invalid_node_data_field
                        {
                          node_id = node.id;
                          field_name = field.name;
-                         expected_value = field_spec.value;
+                         expected_kind = field_spec.value_kind;
                          actual_value = field.value;
                        }))
             node.data_fields)
@@ -165,7 +165,7 @@ let validate_edge nodes_by_id node_specs_by_type (edge : Node.edge) =
               | None, _ -> [ Graph_error.Invalid_source_port edge.source ]
               | _, None -> [ Graph_error.Invalid_target_port edge.target ]
               | Some source_port, Some target_port ->
-                  if Node.same_value_kind source_port.value target_port.value then
+                  if Node.kinds_compatible source_port.value_kind target_port.value_kind then
                     []
                   else
                     [
@@ -173,8 +173,8 @@ let validate_edge nodes_by_id node_specs_by_type (edge : Node.edge) =
                         {
                           source = edge.source;
                           target = edge.target;
-                          source_value = source_port.value;
-                          target_value = target_port.value;
+                          source_kind = source_port.value_kind;
+                          target_kind = target_port.value_kind;
                         };
                     ])))
 
@@ -182,14 +182,14 @@ let validate_port_values graph =
   graph.port_values
   |> Node.Port_ref_map.bindings
   |> List.filter_map (fun (port_ref, value) ->
-         match expected_port_type graph port_ref with
-         | Some expected_value when Node.same_value_kind expected_value value -> None
-         | Some expected_value ->
+         match expected_port_kind graph port_ref with
+         | Some expected_kind when Node.kind_matches_value expected_kind value -> None
+         | Some expected_kind ->
              Some
                (Graph_error.Invalid_port_value
                   {
                     port = port_ref;
-                    expected_value;
+                    expected_kind;
                     actual_value = value;
                   })
          | None ->

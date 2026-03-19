@@ -22,6 +22,7 @@ type response =
       code : string;
       message : string;
       command : command option;
+      details : string list;
     }
 
 let command_to_string = function
@@ -69,6 +70,7 @@ let response_of_protocol_error error =
       code = error_code error;
       message = error_message error;
       command = None;
+      details = [];
     }
 
 let encode_response response =
@@ -81,13 +83,14 @@ let encode_response response =
             ("command", `String (command_to_string command));
             ("result", result);
           ]
-    | Failure { code; message; command } ->
+    | Failure { code; message; command; details } ->
         let fields =
           [
             Some ("status", `String "error");
             Some ("code", `String code);
             Some ("message", `String message);
             Option.map (fun command -> ("command", `String (command_to_string command))) command;
+            Some ("details", `List (List.map (fun detail -> `String detail) details));
           ]
           |> List.filter_map Fun.id
         in

@@ -3,15 +3,23 @@ type value =
   | Bool_value of bool
   | String_value of string
 
+type value_kind =
+  | Number_kind
+  | Bool_kind
+  | String_kind
+  | Any_kind
+
 type port_spec = {
   index : int;
   name : string;
-  value : value;
+  value_kind : value_kind;
 }
 
 type data_field_spec = {
   name : string;
-  value : value;
+  value_kind : value_kind;
+  required : bool;
+  default_value : value option;
 }
 
 type node_spec = {
@@ -51,11 +59,45 @@ let value_label = function
   | Bool_value _ -> "bool"
   | String_value _ -> "string"
 
+let value_kind_label = function
+  | Number_kind -> "number"
+  | Bool_kind -> "bool"
+  | String_kind -> "string"
+  | Any_kind -> "value"
+
 let same_value_kind left right =
   match (left, right) with
   | Number_value _, Number_value _ -> true
   | Bool_value _, Bool_value _ -> true
   | String_value _, String_value _ -> true
+  | _ -> false
+
+let value_kind_of_value = function
+  | Number_value _ -> Number_kind
+  | Bool_value _ -> Bool_kind
+  | String_value _ -> String_kind
+
+let kind_matches_value expected_kind value =
+  match expected_kind with
+  | Any_kind -> true
+  | Number_kind -> value_kind_of_value value = Number_kind
+  | Bool_kind -> value_kind_of_value value = Bool_kind
+  | String_kind -> value_kind_of_value value = String_kind
+
+let kinds_compatible left right =
+  match (left, right) with
+  | Any_kind, _
+  | _, Any_kind -> true
+  | Number_kind, Number_kind
+  | Bool_kind, Bool_kind
+  | String_kind, String_kind -> true
+  | _ -> false
+
+let equal_value left right =
+  match (left, right) with
+  | Number_value left_value, Number_value right_value -> left_value = right_value
+  | Bool_value left_value, Bool_value right_value -> left_value = right_value
+  | String_value left_value, String_value right_value -> left_value = right_value
   | _ -> false
 
 let value_to_string = function
@@ -66,9 +108,14 @@ let value_to_string = function
 let number = Number_value 0.0
 let bool = Bool_value false
 let string = String_value ""
+let number_kind = Number_kind
+let bool_kind = Bool_kind
+let string_kind = String_kind
+let any_kind = Any_kind
 let normalize_number value = Number_value value
-let make_port_spec ~index ~name ~value : port_spec = { index; name; value }
-let make_data_field_spec ~name ~value : data_field_spec = { name; value }
+let make_port_spec ~index ~name ~value_kind : port_spec = { index; name; value_kind }
+let make_data_field_spec ~name ~value_kind ~required ~default_value : data_field_spec =
+  { name; value_kind; required; default_value }
 
 let make_spec
     ~node_type

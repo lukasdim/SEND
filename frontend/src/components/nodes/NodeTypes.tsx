@@ -11,6 +11,9 @@ import {
   withAlpha,
 } from "./base/nodeCardStyle";
 
+export type JsonScalar = string | number | boolean | null;
+export type NodeRuntimeResult = Record<string, JsonScalar>;
+
 export type NodeIoCatalog = {
   nodes: NodeIoDefinition[];
 };
@@ -20,6 +23,7 @@ export type NodeIoDefinition = {
   nodeClass: string;
   inputs: NodeIoPort[];
   outputs: NodeIoPort[];
+  dataFields: NodeIoDataField[];
 };
 
 export type NodeIoPort = {
@@ -30,12 +34,22 @@ export type NodeIoPort = {
   valueTypeClass: string;
 };
 
+export type NodeIoDataField = {
+  name: string;
+  valueType: string;
+  valueTypeClass: string;
+  required: boolean;
+  defaultValue?: JsonScalar;
+};
+
 export type NodeData = {
   label: string;
   nodeClass: string;
   inputs: NodeIoPort[];
   outputs: NodeIoPort[];
-  extra?: Record<string, unknown>;
+  dataFields: NodeIoDataField[];
+  fieldValues: Record<string, JsonScalar>;
+  runtimeResult?: NodeRuntimeResult;
 };
 
 export type NodePaletteItem = {
@@ -68,15 +82,19 @@ function hashToAccentColor(text: string): string {
   return `hsl(${hue} 74% 44%)`;
 }
 
-function toDefaultExtraValue(port: NodeIoPort): string | number | boolean {
-  if (port.valueType === "NumVal") return 0;
-  if (port.valueType === "BoolVal") return false;
+function toFallbackFieldValue(field: NodeIoDataField): JsonScalar {
+  if (field.valueType === "NumVal") return 0;
+  if (field.valueType === "BoolVal") return false;
   return "";
 }
 
-function toInputType(port: NodeIoPort): "text" | "number" | "checkbox" {
-  if (port.valueType === "NumVal") return "number";
-  if (port.valueType === "BoolVal") return "checkbox";
+function toInitialFieldValue(field: NodeIoDataField): JsonScalar {
+  return field.defaultValue ?? toFallbackFieldValue(field);
+}
+
+function toInputType(valueType: string): "text" | "number" | "checkbox" {
+  if (valueType === "NumVal") return "number";
+  if (valueType === "BoolVal") return "checkbox";
   return "text";
 }
 
@@ -86,14 +104,17 @@ function getHandleTop(index: number, total: number): string {
 
 function DynamicNode({ id, data }: NodeProps<NodeData>) {
   const { setNodes } = useReactFlow();
-  const extra = data.extra ?? {};
 
   const inputPorts = useMemo(() => data.inputs ?? [], [data.inputs]);
   const outputPorts = useMemo(() => data.outputs ?? [], [data.outputs]);
+  const dataFields = useMemo(() => data.dataFields ?? [], [data.dataFields]);
+  const fieldValues = data.fieldValues ?? {};
+  const runtimeResult = data.runtimeResult;
+  const hasRuntimeResult = runtimeResult && Object.keys(runtimeResult).length > 0;
 
   const accent = hashToAccentColor(data.label);
 
-  const setExtra = (key: string, value: string | number | boolean) => {
+  const setFieldValue = (key: string, value: JsonScalar) => {
     setNodes((nodes) =>
       nodes.map((node) => {
         if (node.id !== id) return node;
@@ -102,10 +123,11 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
           ...node,
           data: {
             ...nodeData,
-            extra: {
-              ...(nodeData.extra ?? {}),
+            fieldValues: {
+              ...(nodeData.fieldValues ?? {}),
               [key]: value,
             },
+            runtimeResult: undefined,
           },
         };
       })
@@ -124,6 +146,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
         flexDirection: "column",
         position: "relative",
         overflow: "hidden",
+        boxShadow: hasRuntimeResult ? "0 14px 28px rgba(15, 23, 42, 0.08)" : undefined,
       }}
     >
       {inputPorts.map((port, idx) => (
@@ -145,7 +168,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
         style={{
           padding: NODE_TITLE_PADDING,
           background: withAlpha(accent, NODE_TITLE_ALPHA),
-          borderBottom: inputPorts.length > 0 ? "1px solid #e5e7eb" : undefined,
+          borderBottom: dataFields.length > 0 || hasRuntimeResult ? "1px solid #e5e7eb" : undefined,
         }}
       >
         <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.1, color: "#111827" }}>
@@ -153,15 +176,15 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
         </div>
       </div>
 
-      {inputPorts.length > 0 && (
+      {dataFields.length > 0 && (
         <div style={{ padding: NODE_BODY_PADDING, display: "flex", flexDirection: "column", gap: 8 }}>
-          {inputPorts.map((port) => {
-            const inputType = toInputType(port);
-            const value = extra[port.name];
+          {dataFields.map((field) => {
+            const inputType = toInputType(field.valueType);
+            const value = fieldValues[field.name] ?? toInitialFieldValue(field);
 
             return (
               <label
-                key={`field-${port.index}-${port.name}`}
+                key={`field-${field.name}`}
                 style={{
                   display: "grid",
                   gridTemplateColumns: inputType === "checkbox" ? "1fr auto" : "1fr",
@@ -170,13 +193,16 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
                   fontSize: 12,
                 }}
               >
-                <span style={{ fontWeight: 600 }}>{port.name}</span>
+                <span style={{ fontWeight: 600 }}>
+                  {field.name}
+                  {field.required ? " *" : ""}
+                </span>
                 {inputType === "checkbox" ? (
                   <input
                     className="nodrag"
                     type="checkbox"
                     checked={Boolean(value)}
-                    onChange={(event) => setExtra(port.name, event.target.checked)}
+                    onChange={(event) => setFieldValue(field.name, event.target.checked)}
                     style={{ width: 16, height: 16 }}
                   />
                 ) : (
@@ -193,18 +219,54 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
                     onChange={(event) => {
                       if (inputType === "number") {
                         const parsed = Number(event.target.value);
-                        setExtra(port.name, Number.isFinite(parsed) ? parsed : 0);
+                        setFieldValue(field.name, Number.isFinite(parsed) ? parsed : 0);
                         return;
                       }
-                      setExtra(port.name, event.target.value);
+                      setFieldValue(field.name, event.target.value);
                     }}
                     style={inputStyle}
                   />
                 )}
-                <span style={{ color: "#6b7280", fontSize: 11 }}>{port.valueType}</span>
+                <span style={{ color: "#6b7280", fontSize: 11 }}>{field.valueType}</span>
               </label>
             );
           })}
+        </div>
+      )}
+
+      {hasRuntimeResult && (
+        <div
+          style={{
+            padding: "12px 14px",
+            borderTop: "1px solid #e5e7eb",
+            background: "#ffffff",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "#6b7280",
+              marginBottom: 6,
+            }}
+          >
+            Output
+          </div>
+          <pre
+            style={{
+              margin: 0,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              color: "#111827",
+              fontSize: 11,
+              lineHeight: 1.35,
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            }}
+          >
+            {JSON.stringify(runtimeResult, null, 2)}
+          </pre>
         </div>
       )}
 
@@ -243,16 +305,17 @@ export function createNodeRegistry(catalog: NodeIoCatalog): NodeRegistry {
   const reactFlowTypes: NodeTypes = {};
 
   for (const node of catalog.nodes) {
-    const extra = Object.fromEntries(
-      node.inputs.map((port) => [port.name, toDefaultExtraValue(port)])
-    );
+    const fieldValues = Object.fromEntries(
+      node.dataFields.map((field) => [field.name, toInitialFieldValue(field)])
+    ) as Record<string, JsonScalar>;
 
     nodeDataByType[node.nodeType] = {
       label: node.nodeType,
       nodeClass: node.nodeClass,
       inputs: node.inputs,
       outputs: node.outputs,
-      extra,
+      dataFields: node.dataFields,
+      fieldValues,
     };
 
     nodeVisualByType[node.nodeType] = {
@@ -280,7 +343,8 @@ export function createNodeRegistry(catalog: NodeIoCatalog): NodeRegistry {
         ...data,
         inputs: [...data.inputs],
         outputs: [...data.outputs],
-        extra: data.extra ? { ...data.extra } : undefined,
+        dataFields: data.dataFields.map((field) => ({ ...field })),
+        fieldValues: { ...data.fieldValues },
       };
     },
     getNodeVisual: (type: string) => {

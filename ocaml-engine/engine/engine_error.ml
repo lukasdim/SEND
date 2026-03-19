@@ -20,7 +20,7 @@ type t =
   | Invalid_executor_output_type of {
       node_id : Node_id.t;
       port_index : int;
-      expected : Node.value;
+      expected_kind : Node.value_kind;
       actual : Node.value;
     }
   | Graph_state_write_failed of Graph_error.t list
@@ -42,13 +42,13 @@ let to_string = function
       ^ string_of_int port_index
       ^ " for node "
       ^ Node_id.to_string node_id
-  | Invalid_executor_output_type { node_id; port_index; expected; actual } ->
+  | Invalid_executor_output_type { node_id; port_index; expected_kind; actual } ->
       "Executor returned invalid output type for node "
       ^ Node_id.to_string node_id
       ^ " port "
       ^ string_of_int port_index
       ^ ": expected "
-      ^ Node.value_label expected
+      ^ Node.value_kind_label expected_kind
       ^ " but got "
       ^ Node.value_label actual
   | Graph_state_write_failed errors ->

@@ -20,7 +20,7 @@ type t =
   | Invalid_executor_output_type of {
       node_id : Node_id.t;
       port_index : int;
-      expected : Node.value;
+      expected_kind : Node.value_kind;
       actual : Node.value;
     }
   | Graph_state_write_failed of Graph_error.t list

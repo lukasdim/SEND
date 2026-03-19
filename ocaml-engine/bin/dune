@@ -2,7 +2,7 @@
  (name worker_support)
  (wrapped false)
  (modules worker_protocol worker_handler)
- (libraries yojson))
+ (libraries yojson hackonomics_engine hackonomics_runtime hackonomics_executors hackonomics_nodes hackonomics_spec))
 
 (executable
  (name worker)

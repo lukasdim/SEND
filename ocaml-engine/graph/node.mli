@@ -3,15 +3,23 @@ type value =
   | Bool_value of bool
   | String_value of string
 
+type value_kind =
+  | Number_kind
+  | Bool_kind
+  | String_kind
+  | Any_kind
+
 type port_spec = {
   index : int;
   name : string;
-  value : value;
+  value_kind : value_kind;
 }
 
 type data_field_spec = {
   name : string;
-  value : value;
+  value_kind : value_kind;
+  required : bool;
+  default_value : value option;
 }
 
 type node_spec = {
@@ -47,14 +55,28 @@ type edge = {
 }
 
 val value_label : value -> string
+val value_kind_label : value_kind -> string
 val same_value_kind : value -> value -> bool
+val value_kind_of_value : value -> value_kind
+val kind_matches_value : value_kind -> value -> bool
+val kinds_compatible : value_kind -> value_kind -> bool
+val equal_value : value -> value -> bool
 val value_to_string : value -> string
 val number : value
 val bool : value
 val string : value
 val normalize_number : float -> value
-val make_port_spec : index:int -> name:string -> value:value -> port_spec
-val make_data_field_spec : name:string -> value:value -> data_field_spec
+val number_kind : value_kind
+val bool_kind : value_kind
+val string_kind : value_kind
+val any_kind : value_kind
+val make_port_spec : index:int -> name:string -> value_kind:value_kind -> port_spec
+val make_data_field_spec :
+  name:string ->
+  value_kind:value_kind ->
+  required:bool ->
+  default_value:value option ->
+  data_field_spec
 
 val make_spec :
   node_type:string ->

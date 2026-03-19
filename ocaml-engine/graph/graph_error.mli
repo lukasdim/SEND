@@ -9,8 +9,8 @@ type t =
   | Incompatible_edge_types of {
       source : Node.port_ref;
       target : Node.port_ref;
-      source_value : Node.value;
-      target_value : Node.value;
+      source_kind : Node.value_kind;
+      target_kind : Node.value_kind;
     }
   | Unknown_data_field of {
       node_id : Node_id.t;
@@ -19,12 +19,12 @@ type t =
   | Invalid_node_data_field of {
       node_id : Node_id.t;
       field_name : string;
-      expected_value : Node.value;
+      expected_kind : Node.value_kind;
       actual_value : Node.value;
     }
   | Invalid_port_value of {
       port : Node.port_ref;
-      expected_value : Node.value;
+      expected_kind : Node.value_kind;
       actual_value : Node.value;
     }
   | Cycle_detected of Node_id.t list

@@ -9,8 +9,8 @@ type t =
   | Incompatible_edge_types of {
       source : Node.port_ref;
       target : Node.port_ref;
-      source_value : Node.value;
-      target_value : Node.value;
+      source_kind : Node.value_kind;
+      target_kind : Node.value_kind;
     }
   | Unknown_data_field of {
       node_id : Node_id.t;
@@ -19,12 +19,12 @@ type t =
   | Invalid_node_data_field of {
       node_id : Node_id.t;
       field_name : string;
-      expected_value : Node.value;
+      expected_kind : Node.value_kind;
       actual_value : Node.value;
     }
   | Invalid_port_value of {
       port : Node.port_ref;
-      expected_value : Node.value;
+      expected_kind : Node.value_kind;
       actual_value : Node.value;
     }
   | Cycle_detected of Node_id.t list
@@ -47,35 +47,35 @@ let to_string = function
       "Invalid source port: " ^ port_ref_to_string port
   | Invalid_target_port port ->
       "Invalid target port: " ^ port_ref_to_string port
-  | Incompatible_edge_types { source; target; source_value; target_value } ->
+  | Incompatible_edge_types { source; target; source_kind; target_kind } ->
       "Incompatible edge types: "
       ^ port_ref_to_string source
       ^ " ("
-      ^ Node.value_label source_value
+      ^ Node.value_kind_label source_kind
       ^ ") -> "
       ^ port_ref_to_string target
       ^ " ("
-      ^ Node.value_label target_value
+      ^ Node.value_kind_label target_kind
       ^ ")"
   | Unknown_data_field { node_id; field_name } ->
       "Unknown data field on node "
       ^ Node_id.to_string node_id
       ^ ": "
       ^ field_name
-  | Invalid_node_data_field { node_id; field_name; expected_value; actual_value } ->
+  | Invalid_node_data_field { node_id; field_name; expected_kind; actual_value } ->
       "Invalid data field on node "
       ^ Node_id.to_string node_id
       ^ " field "
       ^ field_name
       ^ " expected "
-      ^ Node.value_label expected_value
+      ^ Node.value_kind_label expected_kind
       ^ " but got "
       ^ Node.value_label actual_value
-  | Invalid_port_value { port; expected_value; actual_value } ->
+  | Invalid_port_value { port; expected_kind; actual_value } ->
       "Invalid port value: "
       ^ port_ref_to_string port
       ^ " expected "
-      ^ Node.value_label expected_value
+      ^ Node.value_kind_label expected_kind
       ^ " but got "
       ^ Node.value_label actual_value
   | Cycle_detected node_ids ->

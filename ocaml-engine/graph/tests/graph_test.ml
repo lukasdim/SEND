@@ -7,8 +7,11 @@ let expect_ok = function
       failwith (String.concat " | " (List.map Graph_error.to_string errors))
 
 let node_id value = Node_id.of_string value
-let port index name value = Node.make_port_spec ~index ~name ~value
-let data_field_spec name value = Node.make_data_field_spec ~name ~value
+let port index name value_kind = Node.make_port_spec ~index ~name ~value_kind
+
+let data_field_spec ?(required = false) ?default_value name value_kind =
+  Node.make_data_field_spec ~name ~value_kind ~required ~default_value
+
 let data_field name value = Node.make_data_field ~name ~value
 
 let spec node_type executor_key ~inputs ~outputs ~data_fields ~display_name =
@@ -40,28 +43,28 @@ let base_specs =
       "const_number"
       ~display_name:"Const Number"
       ~inputs:[]
-      ~outputs:[ port 0 "value" Node.number ]
-      ~data_fields:[ data_field_spec "value" Node.number ];
+      ~outputs:[ port 0 "value" Node.number_kind ]
+      ~data_fields:[ data_field_spec ~required:true ~default_value:(Node.Number_value 0.0) "value" Node.number_kind ];
     spec
       "const_bool"
       "const_bool"
       ~display_name:"Const Bool"
       ~inputs:[]
-      ~outputs:[ port 0 "value" Node.bool ]
-      ~data_fields:[ data_field_spec "value" Node.bool ];
+      ~outputs:[ port 0 "value" Node.bool_kind ]
+      ~data_fields:[ data_field_spec ~required:true ~default_value:(Node.Bool_value false) "value" Node.bool_kind ];
     spec
       "to_string"
       "to_string"
       ~display_name:"To String"
-      ~inputs:[ port 0 "value" Node.number ]
-      ~outputs:[ port 0 "text" Node.string ]
+      ~inputs:[ port 0 "value" Node.any_kind ]
+      ~outputs:[ port 0 "text" Node.string_kind ]
       ~data_fields:[];
     spec
       "add"
       "add"
       ~display_name:"Add"
-      ~inputs:[ port 0 "a" Node.number; port 1 "b" Node.number ]
-      ~outputs:[ port 0 "sum" Node.number ]
+      ~inputs:[ port 0 "a" Node.number_kind; port 1 "b" Node.number_kind ]
+      ~outputs:[ port 0 "sum" Node.number_kind ]
       ~data_fields:[];
   ]
 
@@ -74,13 +77,14 @@ let test_port_specs_preserved () =
   assert_true (List.length add_spec.input_ports = 2) "expected two input ports";
   assert_true (List.length add_spec.output_ports = 1) "expected one output port";
   assert_true
-    (Node.find_input_port_spec add_spec 1 = Some (port 1 "b" Node.number))
+    (Node.find_input_port_spec add_spec 1 = Some (port 1 "b" Node.number_kind))
     "expected input port lookup";
   assert_true
-    (Node.find_output_port_spec add_spec 0 = Some (port 0 "sum" Node.number))
+    (Node.find_output_port_spec add_spec 0 = Some (port 0 "sum" Node.number_kind))
     "expected output port lookup";
   assert_true
-    (Node.find_data_field_spec (List.hd base_specs) "value" = Some (data_field_spec "value" Node.number))
+    (Node.find_data_field_spec (List.hd base_specs) "value"
+    = Some (data_field_spec ~required:true ~default_value:(Node.Number_value 0.0) "value" Node.number_kind))
     "expected data field lookup";
   assert_true (Node.find_input_port_spec add_spec 9 = None) "expected missing port lookup"
 
@@ -91,6 +95,20 @@ let test_validate_unique_nodes_and_types () =
       ~nodes:
         [
           node ~data_fields:[ data_field "value" (Node.Number_value 1.0) ] "a" "const_number";
+          node "b" "to_string";
+        ]
+      ~edges:[ edge ~source_node:"a" ~source_port:0 ~target_node:"b" ~target_port:0 ]
+      ()
+  in
+  expect_ok (Graph.validate graph)
+
+let test_any_input_accepts_bool () =
+  let graph =
+    Graph.create
+      ~node_specs:base_specs
+      ~nodes:
+        [
+          node ~data_fields:[ data_field "value" (Node.Bool_value true) ] "a" "const_bool";
           node "b" "to_string";
         ]
       ~edges:[ edge ~source_node:"a" ~source_port:0 ~target_node:"b" ~target_port:0 ]
@@ -128,38 +146,38 @@ let test_invalid_source_port_fail () =
   let graph =
     Graph.create
       ~node_specs:base_specs
-      ~nodes:[ node "a" "const_number"; node "b" "to_string" ]
+      ~nodes:[ node "a" "const_number"; node "b" "add" ]
       ~edges:[ edge ~source_node:"a" ~source_port:9 ~target_node:"b" ~target_port:0 ]
       ()
   in
   match Graph.validate graph with
-  | Error [ Graph_error.Invalid_source_port port_ref ] ->
-      assert_true (port_ref.port_index = 9) "wrong invalid source port"
+  | Error [ Graph_error.Invalid_source_port bad_port_ref ] ->
+      assert_true (bad_port_ref.port_index = 9) "wrong invalid source port"
   | _ -> failwith "expected invalid source port error"
 
 let test_invalid_target_port_fail () =
   let graph =
     Graph.create
       ~node_specs:base_specs
-      ~nodes:[ node "a" "const_number"; node "b" "to_string" ]
+      ~nodes:[ node "a" "const_number"; node "b" "add" ]
       ~edges:[ edge ~source_node:"a" ~source_port:0 ~target_node:"b" ~target_port:9 ]
       ()
   in
   match Graph.validate graph with
-  | Error [ Graph_error.Invalid_target_port port_ref ] ->
-      assert_true (port_ref.port_index = 9) "wrong invalid target port"
+  | Error [ Graph_error.Invalid_target_port bad_port_ref ] ->
+      assert_true (bad_port_ref.port_index = 9) "wrong invalid target port"
   | _ -> failwith "expected invalid target port error"
 
 let test_type_mismatch_fail () =
   let graph =
     Graph.create
       ~node_specs:base_specs
-      ~nodes:[ node "a" "const_bool"; node "b" "to_string" ]
+      ~nodes:[ node "a" "const_bool"; node "b" "add" ]
       ~edges:[ edge ~source_node:"a" ~source_port:0 ~target_node:"b" ~target_port:0 ]
       ()
   in
   match Graph.validate graph with
-  | Error [ Graph_error.Incompatible_edge_types { source_value = Node.Bool_value _; target_value = Node.Number_value _; _ } ] -> ()
+  | Error [ Graph_error.Incompatible_edge_types { source_kind = Node.Bool_kind; target_kind = Node.Number_kind; _ } ] -> ()
   | _ -> failwith "expected incompatible edge types error"
 
 let test_node_data_field_validation () =
@@ -171,7 +189,7 @@ let test_node_data_field_validation () =
       ()
   in
   match Graph.validate graph with
-  | Error [ Graph_error.Invalid_node_data_field { field_name = "value"; expected_value = Node.Number_value _; actual_value = Node.String_value _; _ } ] -> ()
+  | Error [ Graph_error.Invalid_node_data_field { field_name = "value"; expected_kind = Node.Number_kind; actual_value = Node.String_value _; _ } ] -> ()
   | _ -> failwith "expected invalid node data field error"
 
 let test_state_type_validation () =
@@ -188,7 +206,7 @@ let test_state_type_validation () =
     (Graph.port_value graph output_port = Some (Node.Number_value 42.0))
     "expected stored numeric value";
   match Graph.set_port_value graph output_port (Node.Bool_value true) with
-  | Error [ Graph_error.Invalid_port_value { expected_value = Node.Number_value _; actual_value = Node.Bool_value _; _ } ] -> ()
+  | Error [ Graph_error.Invalid_port_value { expected_kind = Node.Number_kind; actual_value = Node.Bool_value _; _ } ] -> ()
   | _ -> failwith "expected invalid port value error"
 
 let test_initial_state_validation () =
@@ -202,7 +220,7 @@ let test_initial_state_validation () =
       ()
   in
   match Graph.validate graph with
-  | Error [ Graph_error.Invalid_port_value { expected_value = Node.Number_value _; actual_value = Node.String_value _; _ } ] -> ()
+  | Error [ Graph_error.Invalid_port_value { expected_kind = Node.Number_kind; actual_value = Node.String_value _; _ } ] -> ()
   | _ -> failwith "expected invalid initial port value error"
 
 let test_topological_sort () =
@@ -228,8 +246,8 @@ let test_cycle_detection () =
         "forward_number"
         "forward_number"
         ~display_name:"Forward"
-        ~inputs:[ port 0 "in" Node.number ]
-        ~outputs:[ port 0 "out" Node.number ]
+        ~inputs:[ port 0 "in" Node.number_kind ]
+        ~outputs:[ port 0 "out" Node.number_kind ]
         ~data_fields:[];
     ]
   in
@@ -253,6 +271,7 @@ let test_cycle_detection () =
 let run_all () =
   test_port_specs_preserved ();
   test_validate_unique_nodes_and_types ();
+  test_any_input_accepts_bool ();
   test_duplicate_node_ids_fail ();
   test_missing_node_spec_fail ();
   test_invalid_source_port_fail ();

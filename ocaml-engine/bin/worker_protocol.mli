@@ -22,6 +22,7 @@ type response =
       code : string;
       message : string;
       command : command option;
+      details : string list;
     }
 
 val command_to_string : command -> string

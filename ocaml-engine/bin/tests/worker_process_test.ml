@@ -22,7 +22,10 @@ let () =
   let stdout_path = Filename.temp_file "worker-stdout" ".log" in
   let stderr_path = Filename.temp_file "worker-stderr" ".log" in
   let input_channel = open_out input_path in
-  output_string input_channel "{\"command\":\"validate_graph\"}\n";
+  output_string
+    input_channel
+    {|{"command":"validate_graph","payload":{"graph":{"nodes":[],"edges":[]},"nodeSpecs":[]}}|};
+  output_char input_channel '\n';
   output_string input_channel "not-json\n";
   close_out input_channel;
   let command =

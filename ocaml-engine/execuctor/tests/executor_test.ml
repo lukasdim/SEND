@@ -1,7 +1,7 @@
 let assert_true condition message =
   if not condition then failwith message
 
-let test_add_executor () =
+let test_Add () =
   let node = Node.make ~id:(Node_id.of_string "add-node") ~node_type:"add" () in
   let node_spec =
     Node.make_spec
@@ -19,7 +19,7 @@ let test_add_executor () =
       ~executor_key:"add"
   in
   match
-    Add_executor.executor.Executor.run
+    Add.executor.Executor.run
       {
         node;
         node_spec;
@@ -30,9 +30,9 @@ let test_add_executor () =
   | _ -> failwith "expected add executor output"
 
 let test_registry_lookup () =
-  let registry = Executor_registry.of_list [ Add_executor.executor ] in
+  let registry = Executor_registry.of_list [ Add.executor ] in
   assert_true (Executor_registry.find "add" registry <> None) "expected executor lookup"
 
 let run_all () =
-  test_add_executor ();
+  test_Add ();
   test_registry_lookup ()

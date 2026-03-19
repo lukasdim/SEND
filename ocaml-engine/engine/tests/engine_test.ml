@@ -72,7 +72,7 @@ let test_execute_graph () =
       ()
   in
   let registry =
-    Executor_registry.of_list [ const_number_executor 0.0; Add_executor.executor ]
+    Executor_registry.of_list [ const_number_executor 0.0; Add.executor ]
   in
   let executed_graph = Engine.execute ~graph ~registry |> expect_ok in
   let sum_port = Node.make_port_ref ~node_id:(node_id "c") ~port_index:0 in

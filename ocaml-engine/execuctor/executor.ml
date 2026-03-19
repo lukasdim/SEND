@@ -26,7 +26,7 @@ type t = {
   run : run_context -> (output, run_error) result;
 }
 
-let find_input inputs index =
+let find_input (inputs : input) index =
   List.assoc_opt index inputs
 
 let run_error_to_string = function

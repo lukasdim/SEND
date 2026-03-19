@@ -1,0 +1,5 @@
+(library
+ (name hackonomics_nodes)
+ (wrapped false)
+ (modules add_executor)
+ (libraries hackonomics_executors))

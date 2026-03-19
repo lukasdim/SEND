@@ -3,27 +3,24 @@
 This directory defines the OCaml graph model used by the execution engine.
 
 Responsibilities:
-- represent graph nodes and explicit port-to-port edges
-- carry scalar runtime values and raw node config payloads
-- validate graph structure during construction
-- provide deterministic traversal helpers for DAG execution
+- represent typed node specs, node instances, explicit port-to-port edges, and node config data
+- carry typed runtime port values as graph state
+- validate graph structure and source/target port compatibility
+- provide stateful graph access plus traversal helpers for DAG-style execution
 
 Planned module layout:
 - `node_id.ml` / `node_id.mli`: stable node identifiers plus ordered maps/sets
-- `value.ml` / `value.mli`: scalar runtime values
-- `port.ml` / `port.mli`: explicit node-port references
-- `edge.ml` / `edge.mli`: source-to-target port edges
-- `node_instance.ml` / `node_instance.mli`: graph-level node occurrences
-- `graph_error.ml` / `graph_error.mli`: structural graph construction errors
-- `graph.ml` / `graph.mli`: immutable validated graph and traversal helpers
-- `graph_test.ml` / `graph_test.mli`: hand-built graph checks for the initial model
+- `node.ml` / `node.mli`: graph data types, typed values, port specs, data field specs, node specs, node instances, and edges
+- `graph_error.ml` / `graph_error.mli`: graph validation and state errors
+- `graph.ml` / `graph.mli`: stateful graph storage, validation, state management, and traversal helpers
+- `tests/`: hand-built graph checks for the initial model
 - `utop_load.ml`: toplevel loader for interactive experimentation and tests
 
 Non-goals for this layer:
-- node execution logic
+- node execution logic and executor lookup
 - JSON decoding
 - Java bridge handling
-- cyclic/stateful execution strategies
+- full node-specific semantic validation
 
 Using this directory in `utop`:
 - `#use "./ocaml-engine/graph/utop_load.ml";;`

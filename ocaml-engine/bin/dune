@@ -1,0 +1,10 @@
+(library
+ (name worker_support)
+ (wrapped false)
+ (modules worker_protocol worker_handler)
+ (libraries yojson))
+
+(executable
+ (name worker)
+ (modules worker)
+ (libraries hackonomics_engine worker_support))

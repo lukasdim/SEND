@@ -1,193 +1,286 @@
+module String_map = Stdlib.Map.Make (String)
+
 type t = {
-  nodes_by_id : Node_instance.t Node_id.Map.t;
-  edges : Edge.t list;
-  incoming_by_port : Edge.t list Port.Map.t;
-  outgoing_by_port : Edge.t list Port.Map.t;
-  outgoing_by_node : Edge.t list Node_id.Map.t;
-  indegree_by_node : int Node_id.Map.t;
+  node_specs : Node.node_spec list;
+  nodes : Node.t list;
+  edges : Node.edge list;
+  mutable port_values : Node.value Node.Port_ref_map.t;
 }
 
-let add_to_port_index key edge index =
-  let current =
-    match Port.Map.find_opt key index with
-    | Some edges -> edge :: edges
-    | None -> [ edge ]
+let create ?(port_values = []) ~node_specs ~nodes ~edges () =
+  let initial_port_values =
+    List.fold_left
+      (fun current (port_ref, value) -> Node.Port_ref_map.add port_ref value current)
+      Node.Port_ref_map.empty
+      port_values
   in
-  Port.Map.add key current index
+  { node_specs; nodes; edges; port_values = initial_port_values }
 
-let add_to_node_index key edge index =
-  let current =
-    match Node_id.Map.find_opt key index with
-    | Some edges -> edge :: edges
-    | None -> [ edge ]
-  in
-  Node_id.Map.add key current index
-
-let reverse_edge_lists_by_port index = Port.Map.map List.rev index
-let reverse_edge_lists_by_node index = Node_id.Map.map List.rev index
-
-let insert_node (nodes_by_id, indegree_by_node) node =
-  if Node_id.Map.mem node.Node_instance.id nodes_by_id then
-    Error (Graph_error.Duplicate_node_id node.id)
-  else
-    Ok
-      ( Node_id.Map.add node.id node nodes_by_id,
-        Node_id.Map.add node.id 0 indegree_by_node )
-
-let validate_edge nodes_by_id edge =
-  if edge.Edge.source.port_index < 0 || edge.target.port_index < 0 then
-    Error (Graph_error.Invalid_edge_endpoint edge)
-  else if not (Node_id.Map.mem (Edge.source_node_id edge) nodes_by_id) then
-    Error (Graph_error.Missing_source_node (Edge.source_node_id edge))
-  else if not (Node_id.Map.mem (Edge.target_node_id edge) nodes_by_id) then
-    Error (Graph_error.Missing_target_node (Edge.target_node_id edge))
-  else
-    Ok ()
-
-let insert_edge (incoming_by_port, outgoing_by_port, outgoing_by_node, indegree_by_node) edge =
-  let incoming_by_port = add_to_port_index edge.Edge.target edge incoming_by_port in
-  let outgoing_by_port = add_to_port_index edge.Edge.source edge outgoing_by_port in
-  let outgoing_by_node =
-    add_to_node_index (Edge.source_node_id edge) edge outgoing_by_node
-  in
-  let current_indegree =
-    match Node_id.Map.find_opt (Edge.target_node_id edge) indegree_by_node with
-    | Some count -> count
-    | None -> 0
-  in
-  let indegree_by_node =
-    Node_id.Map.add
-      (Edge.target_node_id edge)
-      (current_indegree + 1)
-      indegree_by_node
-  in
-  (incoming_by_port, outgoing_by_port, outgoing_by_node, indegree_by_node)
-
-let create ~nodes ~edges =
-  let sorted_edges = List.sort Edge.compare edges in
-  let rec build_nodes current = function
-    | [] -> Ok current
-    | node :: remaining -> (
-        match insert_node current node with
-        | Ok next -> build_nodes next remaining
-        | Error _ as error -> error)
-  in
-  match build_nodes (Node_id.Map.empty, Node_id.Map.empty) nodes with
-  | Error _ as error -> error
-  | Ok (nodes_by_id, indegree_by_node) ->
-      let rec build_edges current = function
-        | [] -> Ok current
-        | edge :: remaining -> (
-            match validate_edge nodes_by_id edge with
-            | Error _ as error -> error
-            | Ok () -> build_edges (insert_edge current edge) remaining)
-      in
-      begin
-        match
-          build_edges
-            (Port.Map.empty, Port.Map.empty, Node_id.Map.empty, indegree_by_node)
-            sorted_edges
-        with
-        | Error _ as error -> error
-        | Ok (incoming_by_port, outgoing_by_port, outgoing_by_node, indegree_by_node) ->
-            Ok
-              {
-                nodes_by_id;
-                edges = sorted_edges;
-                incoming_by_port = reverse_edge_lists_by_port incoming_by_port;
-                outgoing_by_port = reverse_edge_lists_by_port outgoing_by_port;
-                outgoing_by_node = reverse_edge_lists_by_node outgoing_by_node;
-                indegree_by_node;
-              }
-      end
-
-let nodes graph =
-  graph.nodes_by_id |> Node_id.Map.bindings |> List.map snd
-
+let node_specs graph = graph.node_specs
+let nodes graph = graph.nodes
 let edges graph = graph.edges
-let find_node graph node_id = Node_id.Map.find_opt node_id graph.nodes_by_id
 
-let incoming_edges graph port_ref =
-  match Port.Map.find_opt port_ref graph.incoming_by_port with
-  | Some edges -> edges
-  | None -> []
+let build_node_map nodes =
+  List.fold_left
+    (fun current (node : Node.t) -> Node_id.Map.add node.id node current)
+    Node_id.Map.empty
+    nodes
 
-let outgoing_edges graph port_ref =
-  match Port.Map.find_opt port_ref graph.outgoing_by_port with
-  | Some edges -> edges
-  | None -> []
+let build_spec_map specs =
+  List.fold_left
+    (fun current (spec : Node.node_spec) -> String_map.add spec.node_type spec current)
+    String_map.empty
+    specs
 
-let outgoing_edges_for_node graph node_id =
-  match Node_id.Map.find_opt node_id graph.outgoing_by_node with
-  | Some edges -> edges
-  | None -> []
+let find_node graph node_id =
+  Node_id.Map.find_opt node_id (build_node_map graph.nodes)
 
-let incoming_count graph node_id =
-  match Node_id.Map.find_opt node_id graph.indegree_by_node with
-  | Some count -> count
-  | None -> 0
+let find_node_spec graph node_type =
+  String_map.find_opt node_type (build_spec_map graph.node_specs)
 
-let root_nodes graph =
-  graph.nodes_by_id
-  |> Node_id.Map.bindings
-  |> List.filter_map (fun (node_id, node) ->
-         if incoming_count graph node_id = 0 then Some node else None)
+let node_spec_for_node node_specs_by_type (node : Node.t) =
+  String_map.find_opt node.node_type node_specs_by_type
 
-let leaf_nodes graph =
-  graph.nodes_by_id
-  |> Node_id.Map.bindings
-  |> List.filter_map (fun (node_id, node) ->
-         if outgoing_edges_for_node graph node_id = [] then Some node else None)
+let expected_port_type graph port_ref =
+  match find_node graph port_ref.Node.node_id with
+  | None -> None
+  | Some node -> (
+      match find_node_spec graph node.node_type with
+      | None -> None
+      | Some spec ->
+          match Node.find_input_port_spec spec port_ref.port_index with
+          | Some port -> Some port.value
+          | None -> (
+              match Node.find_output_port_spec spec port_ref.port_index with
+              | Some port -> Some port.value
+              | None -> None))
+
+let port_value graph port_ref =
+  Node.Port_ref_map.find_opt port_ref graph.port_values
+
+let set_port_value graph port_ref value =
+  match expected_port_type graph port_ref with
+  | Some expected_value when Node.same_value_kind expected_value value ->
+      graph.port_values <- Node.Port_ref_map.add port_ref value graph.port_values;
+      Ok ()
+  | Some expected_value ->
+      Error
+        [
+          Graph_error.Invalid_port_value
+            {
+              port = port_ref;
+              expected_value;
+              actual_value = value;
+            };
+        ]
+  | None ->
+      Error [ Graph_error.Invalid_target_port port_ref ]
+
+let validate_duplicate_nodes nodes =
+  let rec loop seen errors = function
+    | [] -> List.rev errors
+    | (node : Node.t) :: remaining ->
+        let errors =
+          if Node_id.Set.mem node.id seen then
+            Graph_error.Duplicate_node_id node.id :: errors
+          else
+            errors
+        in
+        let seen = Node_id.Set.add node.id seen in
+        loop seen errors remaining
+  in
+  loop Node_id.Set.empty [] nodes
+
+let validate_duplicate_specs specs =
+  let rec loop seen errors = function
+    | [] -> List.rev errors
+    | (spec : Node.node_spec) :: remaining ->
+        let errors =
+          if String_map.mem spec.node_type seen then
+            Graph_error.Duplicate_node_type spec.node_type :: errors
+          else
+            errors
+        in
+        let seen = String_map.add spec.node_type spec seen in
+        loop seen errors remaining
+  in
+  loop String_map.empty [] specs
+
+let validate_node_specs nodes node_specs_by_type =
+  List.filter_map
+    (fun (node : Node.t) ->
+      if String_map.mem node.node_type node_specs_by_type then
+        None
+      else
+        Some (Graph_error.Missing_node_spec node.node_type))
+    nodes
+
+let validate_node_data_fields node_specs_by_type nodes =
+  List.concat_map
+    (fun (node : Node.t) ->
+      match node_spec_for_node node_specs_by_type node with
+      | None -> []
+      | Some spec ->
+          List.filter_map
+            (fun (field : Node.data_field) ->
+              match Node.find_data_field_spec spec field.name with
+              | None ->
+                  Some
+                    (Graph_error.Unknown_data_field
+                       {
+                         node_id = node.id;
+                         field_name = field.name;
+                       })
+              | Some field_spec when Node.same_value_kind field_spec.value field.value -> None
+              | Some field_spec ->
+                  Some
+                    (Graph_error.Invalid_node_data_field
+                       {
+                         node_id = node.id;
+                         field_name = field.name;
+                         expected_value = field_spec.value;
+                         actual_value = field.value;
+                       }))
+            node.data_fields)
+    nodes
+
+let validate_edge nodes_by_id node_specs_by_type (edge : Node.edge) =
+  match Node_id.Map.find_opt edge.source.node_id nodes_by_id with
+  | None -> [ Graph_error.Missing_source_node edge.source.node_id ]
+  | Some source_node -> (
+      match Node_id.Map.find_opt edge.target.node_id nodes_by_id with
+      | None -> [ Graph_error.Missing_target_node edge.target.node_id ]
+      | Some target_node -> (
+          match
+            ( node_spec_for_node node_specs_by_type source_node,
+              node_spec_for_node node_specs_by_type target_node )
+          with
+          | None, _ -> [ Graph_error.Missing_node_spec source_node.node_type ]
+          | _, None -> [ Graph_error.Missing_node_spec target_node.node_type ]
+          | Some source_spec, Some target_spec -> (
+              match
+                ( Node.find_output_port_spec source_spec edge.source.port_index,
+                  Node.find_input_port_spec target_spec edge.target.port_index )
+              with
+              | None, _ -> [ Graph_error.Invalid_source_port edge.source ]
+              | _, None -> [ Graph_error.Invalid_target_port edge.target ]
+              | Some source_port, Some target_port ->
+                  if Node.same_value_kind source_port.value target_port.value then
+                    []
+                  else
+                    [
+                      Graph_error.Incompatible_edge_types
+                        {
+                          source = edge.source;
+                          target = edge.target;
+                          source_value = source_port.value;
+                          target_value = target_port.value;
+                        };
+                    ])))
+
+let validate_port_values graph =
+  graph.port_values
+  |> Node.Port_ref_map.bindings
+  |> List.filter_map (fun (port_ref, value) ->
+         match expected_port_type graph port_ref with
+         | Some expected_value when Node.same_value_kind expected_value value -> None
+         | Some expected_value ->
+             Some
+               (Graph_error.Invalid_port_value
+                  {
+                    port = port_ref;
+                    expected_value;
+                    actual_value = value;
+                  })
+         | None ->
+             Some (Graph_error.Invalid_target_port port_ref))
+
+let validate graph =
+  let nodes_by_id = build_node_map graph.nodes in
+  let node_specs_by_type = build_spec_map graph.node_specs in
+  let errors =
+    validate_duplicate_nodes graph.nodes
+    @ validate_duplicate_specs graph.node_specs
+    @ validate_node_specs graph.nodes node_specs_by_type
+    @ validate_node_data_fields node_specs_by_type graph.nodes
+    @ List.concat_map (validate_edge nodes_by_id node_specs_by_type) graph.edges
+    @ validate_port_values graph
+  in
+  match errors with
+  | [] -> Ok ()
+  | errors -> Error errors
 
 let downstream graph port_ref =
-  outgoing_edges graph port_ref |> List.map (fun edge -> edge.Edge.target)
+  graph.edges
+  |> List.filter_map (fun (edge : Node.edge) ->
+         if Node.compare_port_ref edge.source port_ref = 0 then Some edge.target else None)
+
+let incoming_count graph node_id =
+  graph.edges
+  |> List.fold_left
+       (fun count (edge : Node.edge) ->
+         if Node_id.compare edge.target.node_id node_id = 0 then count + 1 else count)
+       0
 
 let topological_sort graph =
-  let initial_queue =
-    graph.indegree_by_node
-    |> Node_id.Map.bindings
-    |> List.filter_map (fun (node_id, count) ->
-           if count = 0 then Some node_id else None)
+  let nodes_by_id = build_node_map graph.nodes in
+  let initial_indegree =
+    graph.nodes
+    |> List.fold_left (fun current (node : Node.t) -> Node_id.Map.add node.id 0 current) Node_id.Map.empty
+    |> fun indegree ->
+    List.fold_left
+      (fun current (edge : Node.edge) ->
+        let existing =
+          match Node_id.Map.find_opt edge.target.node_id current with
+          | Some count -> count
+          | None -> 0
+        in
+        Node_id.Map.add edge.target.node_id (existing + 1) current)
+      indegree
+      graph.edges
   in
-  let rec loop queue indegree_by_node ordered =
+  let initial_queue =
+    initial_indegree
+    |> Node_id.Map.bindings
+    |> List.filter_map (fun (node_id, count) -> if count = 0 then Some node_id else None)
+  in
+  let outgoing_edges_for_node node_id =
+    List.filter
+      (fun (edge : Node.edge) -> Node_id.compare edge.source.node_id node_id = 0)
+      graph.edges
+  in
+  let rec loop queue indegree ordered =
     match queue with
     | [] ->
-        if List.length ordered = Node_id.Map.cardinal graph.nodes_by_id then
-          let ordered_nodes =
-            ordered
-            |> List.rev
-            |> List.filter_map (fun node_id -> find_node graph node_id)
-          in
-          Ok ordered_nodes
+        if List.length ordered = List.length graph.nodes then
+          ordered
+          |> List.rev
+          |> List.filter_map (fun node_id -> Node_id.Map.find_opt node_id nodes_by_id)
+          |> fun nodes -> Ok nodes
         else
-          let cyclic_nodes =
-            indegree_by_node
-            |> Node_id.Map.bindings
-            |> List.filter_map (fun (node_id, count) ->
-                   if count > 0 then Some node_id else None)
-          in
-          Error (Graph_error.Cycle_detected cyclic_nodes)
-    | node_id :: remaining_queue ->
-        let outgoing = outgoing_edges_for_node graph node_id in
-        let indegree_by_node, released_nodes =
-          List.fold_left
-            (fun (current_indegree, newly_released) edge ->
-              let target_id = Edge.target_node_id edge in
-              let existing =
-                match Node_id.Map.find_opt target_id current_indegree with
-                | Some count -> count
-                | None -> 0
-              in
-              let updated = existing - 1 in
-              let next_indegree = Node_id.Map.add target_id updated current_indegree in
-              if updated = 0 then
-                (next_indegree, target_id :: newly_released)
-              else
-                (next_indegree, newly_released))
-            (indegree_by_node, [])
-            outgoing
+          indegree
+          |> Node_id.Map.bindings
+          |> List.filter_map (fun (node_id, count) -> if count > 0 then Some node_id else None)
+          |> fun cyclic_nodes -> Error [ Graph_error.Cycle_detected cyclic_nodes ]
+    | node_id :: remaining ->
+        let indegree, released =
+          outgoing_edges_for_node node_id
+          |> List.fold_left
+               (fun (current_indegree, current_released) (edge : Node.edge) ->
+                 let target_id = edge.target.node_id in
+                 let existing =
+                   match Node_id.Map.find_opt target_id current_indegree with
+                   | Some count -> count
+                   | None -> 0
+                 in
+                 let updated = existing - 1 in
+                 let current_indegree = Node_id.Map.add target_id updated current_indegree in
+                 if updated = 0 then
+                   (current_indegree, target_id :: current_released)
+                 else
+                   (current_indegree, current_released))
+               (indegree, [])
         in
-        let next_queue = remaining_queue @ List.rev released_nodes in
-        loop next_queue indegree_by_node (node_id :: ordered)
+        loop (remaining @ List.rev released) indegree (node_id :: ordered)
   in
-  loop initial_queue graph.indegree_by_node []
+  loop initial_queue initial_indegree []

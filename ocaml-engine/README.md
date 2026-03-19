@@ -1,6 +1,6 @@
 # OCaml Engine Placeholder
 
-This directory is reserved for the OCaml worker that will own graph execution.
+This directory contains the OCaml worker and reusable engine library that will own graph execution.
 
 Planned areas:
 - `spec/` for JSON node-spec decoding
@@ -9,4 +9,10 @@ Planned areas:
 - `engine/` for scheduling and execution
 - `bin/` for the stdin/stdout worker entrypoint
 
-Java will remain the HTTP layer. OCaml will become the execution layer.
+Build system:
+- Dune is the canonical build system for this OCaml project
+
+Runtime boundary:
+- Java remains the HTTP/process-management layer
+- OCaml becomes the execution layer
+- Java communicates with the OCaml worker over JSON Lines on `stdin`/`stdout`

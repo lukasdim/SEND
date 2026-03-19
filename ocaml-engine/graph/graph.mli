@@ -1,15 +1,22 @@
 type t
 
-val create : nodes:Node_instance.t list -> edges:Edge.t list -> (t, Graph_error.t) result
+val create :
+  ?port_values:(Node.port_ref * Node.value) list ->
+  node_specs:Node.node_spec list ->
+  nodes:Node.t list ->
+  edges:Node.edge list ->
+  unit ->
+  t
 
-val nodes : t -> Node_instance.t list
-val edges : t -> Edge.t list
-val find_node : t -> Node_id.t -> Node_instance.t option
-val incoming_edges : t -> Port.Ref.t -> Edge.t list
-val outgoing_edges : t -> Port.Ref.t -> Edge.t list
-val outgoing_edges_for_node : t -> Node_id.t -> Edge.t list
+val node_specs : t -> Node.node_spec list
+val nodes : t -> Node.t list
+val edges : t -> Node.edge list
+val find_node : t -> Node_id.t -> Node.t option
+val find_node_spec : t -> string -> Node.node_spec option
+val expected_port_type : t -> Node.port_ref -> Node.value option
+val validate : t -> (unit, Graph_error.t list) result
+val port_value : t -> Node.port_ref -> Node.value option
+val set_port_value : t -> Node.port_ref -> Node.value -> (unit, Graph_error.t list) result
+val downstream : t -> Node.port_ref -> Node.port_ref list
 val incoming_count : t -> Node_id.t -> int
-val root_nodes : t -> Node_instance.t list
-val leaf_nodes : t -> Node_instance.t list
-val downstream : t -> Port.Ref.t -> Port.Ref.t list
-val topological_sort : t -> (Node_instance.t list, Graph_error.t) result
+val topological_sort : t -> (Node.t list, Graph_error.t list) result

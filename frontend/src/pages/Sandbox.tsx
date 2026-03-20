@@ -357,7 +357,7 @@ function SandboxInner() {
 
   const onNodesChange = useCallback(
     (changes: Parameters<typeof applyNodeChanges>[0]) => {
-      setNodes((currentNodes) => applyNodeChanges(changes, stripRuntimeResults(currentNodes)));
+      setNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
     },
     [setNodes]
   );

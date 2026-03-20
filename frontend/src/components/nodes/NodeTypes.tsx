@@ -113,6 +113,8 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
   const hasRuntimeResult = runtimeResult && Object.keys(runtimeResult).length > 0;
 
   const accent = hashToAccentColor(data.label);
+  const runtimeGlowTight = withAlpha(accent, 0.42);
+  const runtimeGlowWide = withAlpha(accent, 0.24);
 
   const setFieldValue = (key: string, value: JsonScalar) => {
     setNodes((nodes) =>
@@ -138,121 +140,195 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
     <div
       style={{
         width: "100%",
-        border: NODE_CARD_BORDER,
-        borderRadius: NODE_CARD_RADIUS,
-        background: "#ffffff",
-        fontFamily: "system-ui, sans-serif",
-        display: "flex",
-        flexDirection: "column",
         position: "relative",
-        overflow: "hidden",
-        boxShadow: hasRuntimeResult ? "0 14px 28px rgba(15, 23, 42, 0.08)" : undefined,
+        overflow: "visible",
       }}
     >
-      {inputPorts.map((port, idx) => (
-        <Handle
-          key={`in-${port.index}-${port.name}`}
-          id={`in:${port.index}`}
-          type="target"
-          position={Position.Left}
-          style={{
-            ...NODE_HANDLE_STYLE,
-            left: -8,
-            top: getHandleTop(idx, inputPorts.length),
-            transform: "translateY(-50%)",
-          }}
-        />
-      ))}
-
       <div
         style={{
-          padding: NODE_TITLE_PADDING,
-          background: withAlpha(accent, NODE_TITLE_ALPHA),
-          borderBottom: dataFields.length > 0 || hasRuntimeResult ? "1px solid #e5e7eb" : undefined,
+          border: NODE_CARD_BORDER,
+          borderRadius: NODE_CARD_RADIUS,
+          background: "#ffffff",
+          fontFamily: "system-ui, sans-serif",
+          display: "flex",
+          flexDirection: "column",
+          position: "relative",
+          zIndex: 1,
+          boxShadow: hasRuntimeResult
+            ? `0 0 14px ${runtimeGlowTight}, 0 0 26px ${runtimeGlowWide}, 0 6px 14px rgba(15, 23, 42, 0.08)`
+            : undefined,
         }}
       >
-        <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.1, color: "#111827" }}>
-          {data.label}
-        </div>
-      </div>
+        {inputPorts.map((port, idx) => (
+          <Handle
+            key={`in-${port.index}-${port.name}`}
+            id={`in:${port.index}`}
+            type="target"
+            position={Position.Left}
+            style={{
+              ...NODE_HANDLE_STYLE,
+              left: -8,
+              top: getHandleTop(idx, inputPorts.length),
+              transform: "translateY(-50%)",
+              zIndex: 3,
+            }}
+          />
+        ))}
 
-      {dataFields.length > 0 && (
-        <div style={{ padding: NODE_BODY_PADDING, display: "flex", flexDirection: "column", gap: 8 }}>
-          {dataFields.map((field) => {
-            const inputType = toInputType(field.valueType);
-            const value = fieldValues[field.name] ?? toInitialFieldValue(field);
-
-            return (
-              <label
-                key={`field-${field.name}`}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: inputType === "checkbox" ? "1fr auto" : "1fr",
-                  gap: 6,
-                  color: "#111827",
-                  fontSize: 12,
-                }}
-              >
-                <span style={{ fontWeight: 600 }}>
-                  {field.name}
-                  {field.required ? " *" : ""}
-                </span>
-                {inputType === "checkbox" ? (
-                  <input
-                    className="nodrag"
-                    type="checkbox"
-                    checked={Boolean(value)}
-                    onChange={(event) => setFieldValue(field.name, event.target.checked)}
-                    style={{ width: 16, height: 16 }}
-                  />
-                ) : (
-                  <input
-                    className="nodrag"
-                    type={inputType}
-                    value={
-                      typeof value === "number" || typeof value === "string"
-                        ? value
-                        : inputType === "number"
-                          ? 0
-                          : ""
-                    }
-                    onChange={(event) => {
-                      if (inputType === "number") {
-                        const parsed = Number(event.target.value);
-                        setFieldValue(field.name, Number.isFinite(parsed) ? parsed : 0);
-                        return;
-                      }
-                      setFieldValue(field.name, event.target.value);
-                    }}
-                    style={inputStyle}
-                  />
-                )}
-                <span style={{ color: "#6b7280", fontSize: 11 }}>{field.valueType}</span>
-              </label>
-            );
-          })}
-        </div>
-      )}
-
-      {hasRuntimeResult && (
         <div
           style={{
-            padding: "12px 14px",
-            borderTop: "1px solid #e5e7eb",
+            position: "relative",
+            zIndex: 2,
+            borderRadius: NODE_CARD_RADIUS,
+            overflow: "hidden",
             background: "#ffffff",
           }}
         >
           <div
             style={{
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "#6b7280",
+              padding: NODE_TITLE_PADDING,
+              background: withAlpha(accent, NODE_TITLE_ALPHA),
+              borderBottom: dataFields.length > 0 || hasRuntimeResult ? "1px solid #e5e7eb" : undefined,
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.1, color: "#111827" }}>
+              {data.label}
+            </div>
+          </div>
+
+          {dataFields.length > 0 && (
+            <div
+              style={{
+                padding: NODE_BODY_PADDING,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                background: "#ffffff",
+              }}
+            >
+              {dataFields.map((field) => {
+                const inputType = toInputType(field.valueType);
+                const value = fieldValues[field.name] ?? toInitialFieldValue(field);
+
+                return (
+                  <label
+                    key={`field-${field.name}`}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: inputType === "checkbox" ? "1fr auto" : "1fr",
+                      gap: 6,
+                      color: "#111827",
+                      fontSize: 12,
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>
+                      {field.name}
+                      {field.required ? " *" : ""}
+                    </span>
+                    {inputType === "checkbox" ? (
+                      <input
+                        className="nodrag"
+                        type="checkbox"
+                        checked={Boolean(value)}
+                        onChange={(event) => setFieldValue(field.name, event.target.checked)}
+                        style={{ width: 16, height: 16 }}
+                      />
+                    ) : (
+                      <input
+                        className="nodrag"
+                        type={inputType}
+                        value={
+                          typeof value === "number" || typeof value === "string"
+                            ? value
+                            : inputType === "number"
+                              ? 0
+                              : ""
+                        }
+                        onChange={(event) => {
+                          if (inputType === "number") {
+                            const parsed = Number(event.target.value);
+                            setFieldValue(field.name, Number.isFinite(parsed) ? parsed : 0);
+                            return;
+                          }
+                          setFieldValue(field.name, event.target.value);
+                        }}
+                        style={inputStyle}
+                      />
+                    )}
+                    <span style={{ color: "#6b7280", fontSize: 11 }}>{field.valueType}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {outputPorts.map((port, idx) => (
+          <Handle
+            key={`out-${port.index}-${port.name}`}
+            id={`out:${port.index}`}
+            type="source"
+            position={Position.Right}
+            style={{
+              ...NODE_HANDLE_STYLE,
+              right: -8,
+              top: getHandleTop(idx, outputPorts.length),
+              transform: "translateY(-50%)",
+              zIndex: 3,
+            }}
+          />
+        ))}
+      </div>
+
+      {hasRuntimeResult && (
+        <div
+          style={{
+            position: "relative",
+            zIndex: 0,
+            marginTop: -14,
+            marginLeft: 16,
+            marginRight: 16,
+            padding: "22px 14px 12px",
+            borderRadius: NODE_CARD_RADIUS - 4,
+            background: "#ffffff",
+            boxShadow: "0 8px 14px rgba(15, 23, 42, 0.14)",
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
               marginBottom: 6,
             }}
           >
-            Output
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "#6b7280",
+              }}
+            >
+              Output
+            </div>
+            <div
+              style={{
+                padding: "3px 8px",
+                borderRadius: 999,
+                background: withAlpha(accent, 0.14),
+                color: "#111827",
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+              }}
+            >
+              Updated
+            </div>
           </div>
           <pre
             style={{
@@ -269,21 +345,6 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
           </pre>
         </div>
       )}
-
-      {outputPorts.map((port, idx) => (
-        <Handle
-          key={`out-${port.index}-${port.name}`}
-          id={`out:${port.index}`}
-          type="source"
-          position={Position.Right}
-          style={{
-            ...NODE_HANDLE_STYLE,
-            right: -8,
-            top: getHandleTop(idx, outputPorts.length),
-            transform: "translateY(-50%)",
-          }}
-        />
-      ))}
     </div>
   );
 }

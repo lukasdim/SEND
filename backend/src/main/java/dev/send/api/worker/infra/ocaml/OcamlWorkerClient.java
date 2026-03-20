@@ -10,9 +10,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import javax.annotation.Nullable;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -33,6 +36,8 @@ import jakarta.annotation.PreDestroy;
  */
 @Component
 public class OcamlWorkerClient {
+    private static final Logger log = LoggerFactory.getLogger(OcamlWorkerClient.class);
+
     private final ObjectMapper objectMapper;
     private final StrategyWorkerPayloadMapper strategyWorkerPayloadMapper;
     private final String workerCommand;
@@ -125,9 +130,10 @@ public class OcamlWorkerClient {
         }
 
         try {
-            process = new ProcessBuilder("sh", "-lc", resolvedWorkerCommand).start();
+            process = startWorkerProcess(resolvedWorkerCommand);
             writer = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
             reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+            startStderrDrainer(process);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to start the OCaml worker process.", e);
         }
@@ -145,6 +151,10 @@ public class OcamlWorkerClient {
 
         for (Path candidate : candidates) {
             if (Files.isDirectory(candidate) && Files.exists(candidate.resolve("dune-project"))) {
+                Path builtWorker = candidate.resolve("_build/default/bin/worker.exe");
+                if (isWindows() && Files.isRegularFile(builtWorker)) {
+                    return builtWorker.toString();
+                }
                 return "cd " + shellEscape(candidate.toString()) + " && dune exec ./bin/worker.exe";
             }
         }
@@ -176,6 +186,46 @@ public class OcamlWorkerClient {
 
     private String shellEscape(String value) {
         return "'" + value.replace("'", "'\"'\"'") + "'";
+    }
+
+    private Process startWorkerProcess(String resolvedWorkerCommand) throws IOException {
+        if (isWindowsExecutablePath(resolvedWorkerCommand)) {
+            log.info("Starting OCaml worker executable at {}", resolvedWorkerCommand);
+            return new ProcessBuilder(resolvedWorkerCommand).start();
+        }
+
+        if (isWindows()) {
+            log.info("Starting OCaml worker via cmd: {}", resolvedWorkerCommand);
+            return new ProcessBuilder("cmd.exe", "/c", resolvedWorkerCommand).start();
+        }
+
+        log.info("Starting OCaml worker via sh -lc");
+        return new ProcessBuilder("sh", "-lc", resolvedWorkerCommand).start();
+    }
+
+    private Thread startStderrDrainer(Process workerProcess) {
+        Thread thread = new Thread(() -> {
+            try (BufferedReader stderr =
+                    new BufferedReader(new InputStreamReader(workerProcess.getErrorStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = stderr.readLine()) != null) {
+                    log.warn("OCaml worker stderr: {}", line);
+                }
+            } catch (IOException exception) {
+                log.warn("Failed to read OCaml worker stderr.", exception);
+            }
+        }, "ocaml-worker-stderr");
+        thread.setDaemon(true);
+        thread.start();
+        return thread;
+    }
+
+    private boolean isWindowsExecutablePath(String command) {
+        return isWindows() && command.toLowerCase(Locale.ROOT).endsWith(".exe") && Files.isRegularFile(Path.of(command));
+    }
+
+    private boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
     }
 
     @PreDestroy

@@ -1,7 +1,5 @@
-// src/pages/Sandbox.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactFlow, {
-  addEdge,
   Background,
   type Connection,
   Controls,
@@ -9,6 +7,9 @@ import ReactFlow, {
   MiniMap,
   type Node,
   ReactFlowProvider,
+  addEdge,
+  applyEdgeChanges,
+  applyNodeChanges,
   useEdgesState,
   useNodesState,
   useReactFlow,
@@ -17,7 +18,10 @@ import "reactflow/dist/style.css";
 import {
   createEmptyNodeRegistry,
   createNodeRegistry,
+  type JsonScalar,
+  type NodeData,
   type NodePaletteItem,
+  type NodeRuntimeResult,
 } from "../components/nodes/NodeTypes";
 import {
   NODE_CARD_BORDER,
@@ -34,7 +38,7 @@ import {
   SANDBOX_NOTIFICATION_TIMEOUT_MS,
   SANDBOX_STRATEGIES_API,
 } from "../config/sandboxConfig";
-import { fetchNodeIoCatalog } from "../services/api";
+import { fetchNodeIoCatalog, testStrategy, type ApiError } from "../services/api";
 
 type StrategySummary = {
   id: string;
@@ -49,13 +53,15 @@ type GraphNodePayload = {
     x: number;
     y: number;
   };
-  data: Record<string, unknown>;
+  data: Record<string, JsonScalar>;
 };
 
 type GraphEdgePayload = {
   id: string;
   source: string;
   target: string;
+  sourceHandle?: string;
+  targetHandle?: string;
 };
 
 type GraphPayload = {
@@ -73,10 +79,63 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isApiError(value: unknown): value is ApiError {
+  return (
+    isRecord(value) &&
+    typeof value.code === "string" &&
+    typeof value.message === "string" &&
+    Array.isArray(value.details) &&
+    value.details.every((detail) => typeof detail === "string")
+  );
+}
+
+function stripRuntimeResults(nodes: Node[]): Node[] {
+  return nodes.map((node) => {
+    if (!isRecord(node.data) || !("runtimeResult" in node.data)) {
+      return node;
+    }
+
+    const { runtimeResult: _runtimeResult, ...rest } = node.data as NodeData;
+    return {
+      ...node,
+      data: rest,
+    };
+  });
+}
+
+function mergeRuntimeResults(nodes: Node[], results: Record<string, NodeRuntimeResult>): Node[] {
+  return nodes.map((node) => {
+    const result = results[node.id];
+    if (!result) return node;
+    const nodeData = node.data as NodeData;
+    return {
+      ...node,
+      data: {
+        ...nodeData,
+        runtimeResult: result,
+      },
+    };
+  });
+}
+
 function formatLastEdited(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+}
+
+function formatApiErrorMessage(error: unknown, fallbackMessage: string): string {
+  if (isApiError(error)) {
+    return error.details.length > 0
+      ? `${error.message}\n${error.details.join("\n")}`
+      : error.message;
+  }
+
+  if (error instanceof Error && error.message.length > 0) {
+    return error.message;
+  }
+
+  return fallbackMessage;
 }
 
 function NodeTemplatePreview({
@@ -85,7 +144,7 @@ function NodeTemplatePreview({
   getNodeVisual,
 }: {
   node: NodePaletteItem;
-  getDefaultNodeData: (type: string) => { label: string; extra?: Record<string, unknown> } | undefined;
+  getDefaultNodeData: (type: string) => NodeData | undefined;
   getNodeVisual: (type: string) => { accent: string; color: string } | undefined;
 }) {
   const previewData = getDefaultNodeData(node.type);
@@ -94,9 +153,8 @@ function NodeTemplatePreview({
     accent: "#16a34a",
     color: "white",
   };
-  const extra = previewData.extra ?? {};
-  const extraEntries = Object.entries(extra as Record<string, unknown>);
-  const hasBody = extraEntries.length > 0;
+  const fieldEntries = previewData.dataFields.map((field) => [field.name, previewData.fieldValues[field.name]]);
+  const hasBody = fieldEntries.length > 0;
 
   return (
     <div
@@ -126,19 +184,32 @@ function NodeTemplatePreview({
         <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.1 }}>{previewData.label}</div>
       </div>
       {hasBody && (
-        <div style={{ padding: "14px 16px", display: "flex", gap: 8 }}>
-          {extraEntries.map(([key, value]) => (
-            <input
-              key={key}
-              className="nodrag"
-              readOnly
-              disabled
-              placeholder={key}
-              value={typeof value === "string" ? value : ""}
-              type={typeof value === "number" || value === null ? "number" : "text"}
-              style={previewInputStyle}
-            />
-          ))}
+        <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+          {previewData.dataFields.map((field) => {
+            const value = previewData.fieldValues[field.name];
+            const isCheckbox = field.valueType === "BoolVal";
+
+            return isCheckbox ? (
+              <label
+                key={field.name}
+                style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, fontSize: 12 }}
+              >
+                <span>{field.name}</span>
+                <input className="nodrag" type="checkbox" checked={Boolean(value)} readOnly disabled />
+              </label>
+            ) : (
+              <input
+                key={field.name}
+                className="nodrag"
+                readOnly
+                disabled
+                placeholder={field.name}
+                value={typeof value === "string" || typeof value === "number" ? value : ""}
+                type={field.valueType === "NumVal" ? "number" : "text"}
+                style={previewInputStyle}
+              />
+            );
+          })}
         </div>
       )}
       {node.outputCount > 0 && <div style={previewRightHandleStyle} />}
@@ -199,7 +270,7 @@ function ErrorNotification({ message }: { message: string }) {
             color: "#7f1d1d",
             fontSize: 14,
             lineHeight: 1.35,
-            whiteSpace: "normal",
+            whiteSpace: "pre-line",
             wordBreak: "break-word",
           }}
         >
@@ -223,6 +294,7 @@ function SandboxInner() {
   const [currentStrategyName, setCurrentStrategyName] = useState<string | null>(null);
   const [isStrategyLoading, setIsStrategyLoading] = useState(false);
   const [isStrategySaving, setIsStrategySaving] = useState(false);
+  const [isStrategyTesting, setIsStrategyTesting] = useState(false);
   const timeoutRef = useRef<number | null>(null);
 
   const {
@@ -276,8 +348,27 @@ function SandboxInner() {
   const initialNodes: Node[] = useMemo(() => [], []);
   const initialEdges: Edge[] = useMemo(() => [], []);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes] = useNodesState(initialNodes);
+  const [edges, setEdges] = useEdgesState(initialEdges);
+
+  const clearRuntimeResults = useCallback(() => {
+    setNodes((currentNodes) => stripRuntimeResults(currentNodes));
+  }, [setNodes]);
+
+  const onNodesChange = useCallback(
+    (changes: Parameters<typeof applyNodeChanges>[0]) => {
+      setNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
+    },
+    [setNodes]
+  );
+
+  const onEdgesChange = useCallback(
+    (changes: Parameters<typeof applyEdgeChanges>[0]) => {
+      clearRuntimeResults();
+      setEdges((currentEdges) => applyEdgeChanges(changes, currentEdges));
+    },
+    [clearRuntimeResults, setEdges]
+  );
 
   const graphDatabase = useMemo(() => {
     const minX = nodes.length > 0 ? Math.min(...nodes.map((node) => node.position.x)) : 0;
@@ -285,14 +376,14 @@ function SandboxInner() {
 
     return {
       nodes: nodes.map((node) => {
-        const extra =
-          node.data && typeof node.data === "object" && "extra" in node.data
-            ? ((node.data as { extra?: Record<string, unknown> }).extra ?? {})
+        const fieldValues =
+          node.data && typeof node.data === "object" && "fieldValues" in node.data
+            ? ((node.data as { fieldValues?: Record<string, JsonScalar> }).fieldValues ?? {})
             : {};
 
         const data = Object.fromEntries(
-          Object.entries(extra).filter(([, value]) => value !== null && value !== undefined)
-        );
+          Object.entries(fieldValues).filter(([, value]) => value !== undefined)
+        ) as Record<string, JsonScalar>;
 
         return {
           id: node.id,
@@ -308,6 +399,8 @@ function SandboxInner() {
         id: edge.id || `e-${index + 1}`,
         source: edge.source,
         target: edge.target,
+        sourceHandle: typeof edge.sourceHandle === "string" ? edge.sourceHandle : undefined,
+        targetHandle: typeof edge.targetHandle === "string" ? edge.targetHandle : undefined,
       })),
     } satisfies GraphPayload;
   }, [edges, nodes]);
@@ -392,11 +485,7 @@ function SandboxInner() {
               ? { x: position.x, y: position.y }
               : null;
 
-          if (
-            typeof id !== "string" ||
-            typeof type !== "string" ||
-            !finalPosition
-          ) {
+          if (typeof id !== "string" || typeof type !== "string" || !finalPosition) {
             return [];
           }
 
@@ -405,21 +494,21 @@ function SandboxInner() {
           const baseData = getDefaultNodeData(type);
           if (!baseData) return [];
 
-          const mergedExtra = {
-            ...(baseData.extra ?? {}),
-            ...(isRecord(data) ? data : {}),
+          const mergedFieldValues = {
+            ...(baseData.fieldValues ?? {}),
+            ...(isRecord(data) ? (data as Record<string, JsonScalar>) : {}),
           };
-          const nextData =
-            Object.keys(mergedExtra).length > 0
-              ? { ...baseData, extra: mergedExtra }
-              : { ...baseData };
 
           return [
             {
               id,
               type,
               position: finalPosition,
-              data: nextData,
+              data: {
+                ...baseData,
+                fieldValues: mergedFieldValues,
+                runtimeResult: undefined,
+              },
               style: { width: SANDBOX_NODE_WIDTH, color: "black" },
             },
           ];
@@ -428,7 +517,7 @@ function SandboxInner() {
         const loadedEdges: Edge[] = payload.edges.flatMap((rawEdge, index) => {
           if (!isRecord(rawEdge)) return [];
 
-          const { id, source, target } = rawEdge;
+          const { id, source, sourceHandle, target, targetHandle } = rawEdge;
           if (typeof source !== "string" || typeof target !== "string") return [];
 
           return [
@@ -436,6 +525,8 @@ function SandboxInner() {
               id: typeof id === "string" && id.length > 0 ? id : `e-${index + 1}`,
               source,
               target,
+              sourceHandle: typeof sourceHandle === "string" ? sourceHandle : undefined,
+              targetHandle: typeof targetHandle === "string" ? targetHandle : undefined,
               type: "smoothstep",
               animated: true,
             },
@@ -460,11 +551,13 @@ function SandboxInner() {
   );
 
   const onConnect = useCallback(
-    (params: Edge | Connection) =>
-      setEdges((eds) =>
-        addEdge({ ...params, type: "smoothstep", animated: true }, eds)
-      ),
-    [setEdges]
+    (params: Edge | Connection) => {
+      clearRuntimeResults();
+      setEdges((currentEdges) =>
+        addEdge({ ...params, type: "smoothstep", animated: true }, currentEdges)
+      );
+    },
+    [clearRuntimeResults, setEdges]
   );
 
   const tryCreateNode = useCallback(
@@ -488,14 +581,14 @@ function SandboxInner() {
         style: { width: SANDBOX_NODE_WIDTH, color: "black" },
       };
 
-      setNodes((nds) => nds.concat(newNode));
+      setNodes((currentNodes) => stripRuntimeResults(currentNodes).concat(newNode));
       if (nodes.length === 0) {
         setCurrentStrategyName(SANDBOX_DEFAULT_UNTITLED_STRATEGY_NAME);
         setCurrentStrategyId(null);
       }
       return true;
     },
-    [getDefaultNodeData, isSupportedNodeType, nodes, notifyError, setNodes]
+    [getDefaultNodeData, isSupportedNodeType, nodes.length, notifyError, setNodes]
   );
 
   const onDragStart = (event: React.DragEvent, nodeType: string) => {
@@ -561,7 +654,8 @@ function SandboxInner() {
     setCurrentStrategyId(null);
     setCurrentStrategyName(SANDBOX_DEFAULT_UNTITLED_STRATEGY_NAME);
     setPendingPointerNodeType(null);
-  }, []);
+    clearRuntimeResults();
+  }, [clearRuntimeResults]);
 
   const onSaveStrategy = useCallback(async () => {
     if (nodes.length === 0) {
@@ -598,6 +692,33 @@ function SandboxInner() {
       setIsStrategySaving(false);
     }
   }, [currentStrategyId, currentStrategyName, graphDatabase, nodes.length, notifyError]);
+
+  const onTestStrategy = useCallback(async () => {
+    if (nodes.length === 0) {
+      notifyError("Add at least one node before testing a strategy.");
+      return;
+    }
+
+    setIsStrategyTesting(true);
+    setNodes((currentNodes) => stripRuntimeResults(currentNodes));
+
+    try {
+      const payload: BackendGraphDto = {
+        id: currentStrategyId ?? "draft",
+        nodes: graphDatabase.nodes as unknown[],
+        edges: graphDatabase.edges as unknown[],
+      };
+
+      const results = await testStrategy(payload);
+      setNodes((currentNodes) => mergeRuntimeResults(stripRuntimeResults(currentNodes), results));
+    } catch (error) {
+      notifyError(
+        formatApiErrorMessage(error, "Could not test this strategy. Please try again.")
+      );
+    } finally {
+      setIsStrategyTesting(false);
+    }
+  }, [currentStrategyId, graphDatabase, nodes.length, notifyError, setNodes]);
 
   return (
     <div
@@ -657,7 +778,7 @@ function SandboxInner() {
           <br />
           {isNodeCatalogLoading
             ? "Node palette is populated from backend metadata."
-            : "Handles and inputs are generated from backend metadata."}
+            : "Ports and editable fields are generated from backend metadata."}
         </div>
 
         {pendingPointerNodeType && (
@@ -801,19 +922,35 @@ function SandboxInner() {
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => void onSaveStrategy()}
-          disabled={isStrategySaving}
-          style={{
-            ...toolbarButtonStyle,
-            marginTop: 12,
-            opacity: isStrategySaving ? 0.7 : 1,
-            cursor: isStrategySaving ? "wait" : "pointer",
-          }}
-        >
-          {isStrategySaving ? "Saving strategy..." : "Save strategy"}
-        </button>
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <button
+            type="button"
+            onClick={() => void onTestStrategy()}
+            disabled={isStrategyTesting || nodes.length === 0}
+            style={{
+              ...toolbarButtonStyle,
+              flex: 1,
+              opacity: isStrategyTesting || nodes.length === 0 ? 0.7 : 1,
+              cursor: isStrategyTesting ? "wait" : nodes.length === 0 ? "not-allowed" : "pointer",
+            }}
+          >
+            {isStrategyTesting ? "Testing..." : "Test strategy"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void onSaveStrategy()}
+            disabled={isStrategySaving}
+            style={{
+              ...toolbarButtonStyle,
+              flex: 1,
+              opacity: isStrategySaving ? 0.7 : 1,
+              cursor: isStrategySaving ? "wait" : "pointer",
+            }}
+          >
+            {isStrategySaving ? "Saving..." : "Save strategy"}
+          </button>
+        </div>
       </div>
     </div>
   );

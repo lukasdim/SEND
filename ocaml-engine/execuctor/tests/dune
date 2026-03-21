@@ -1,0 +1,4 @@
+(test
+ (name executor_test_runner)
+ (modules executor_test_runner executor_test)
+ (libraries hackonomics_executors hackonomics_nodes))

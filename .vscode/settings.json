@@ -8,5 +8,10 @@
                 "cmd": "cd backend && .\\gradlew.bat spotlessApply"
             }
         ]
+    },
+    "java.compile.nullAnalysis.mode": "automatic",
+    "ocaml.sandbox": {
+        "kind": "opam",
+        "switch": "overlock"
     }
 }

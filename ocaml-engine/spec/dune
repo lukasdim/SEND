@@ -1,0 +1,5 @@
+(library
+ (name hackonomics_spec)
+ (wrapped false)
+ (modules spec_error node_spec_decoder)
+ (libraries hackonomics_engine yojson))

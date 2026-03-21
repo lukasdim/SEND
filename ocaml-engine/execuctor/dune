@@ -1,0 +1,5 @@
+(library
+ (name hackonomics_executors)
+ (wrapped false)
+ (modules executor executor_registry)
+ (libraries hackonomics_engine))

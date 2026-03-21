@@ -1,0 +1,4 @@
+(test
+ (name engine_test_runner)
+ (modules engine_test_runner engine_test)
+ (libraries hackonomics_runtime hackonomics_executors))

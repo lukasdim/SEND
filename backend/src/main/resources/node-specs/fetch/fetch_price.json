@@ -1,0 +1,16 @@
+{
+  "nodeType": "fetch_price",
+  "set": "fetch",
+  "displayName": "Fetch Price",
+  "description": "Fetches a price value for a configured ticker and price field.",
+  "inputs": [],
+  "outputs": [
+    { "index": 0, "name": "price", "arity": "ONE", "valueType": "NumVal" }
+  ],
+  "dataFields": [
+    { "name": "ticker", "valueType": "StrVal", "required": true, "defaultValue": "SPY" },
+    { "name": "field", "valueType": "StrVal", "required": true, "defaultValue": "close" },
+    { "name": "interval", "valueType": "StrVal", "required": true, "defaultValue": "1d" }
+  ],
+  "executorKey": "fetch_price"
+}

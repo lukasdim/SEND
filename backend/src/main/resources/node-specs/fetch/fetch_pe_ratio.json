@@ -1,0 +1,14 @@
+{
+  "nodeType": "fetch_pe_ratio",
+  "set": "fetch",
+  "displayName": "Fetch P/E Ratio",
+  "description": "Fetches the price-to-earnings ratio for a configured ticker.",
+  "inputs": [],
+  "outputs": [
+    { "index": 0, "name": "pe_ratio", "arity": "ONE", "valueType": "NumVal" }
+  ],
+  "dataFields": [
+    { "name": "ticker", "valueType": "StrVal", "required": true, "defaultValue": "AAPL" }
+  ],
+  "executorKey": "fetch_pe_ratio"
+}

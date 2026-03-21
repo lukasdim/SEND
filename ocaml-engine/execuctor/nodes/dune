@@ -1,0 +1,27 @@
+(library
+ (name hackonomics_nodes)
+ (wrapped false)
+ (modules
+  add
+  subtract
+  multiply
+  divide
+  negate
+  and_node
+  or_node
+  not_node
+  gt
+  gte
+  lt
+  lte
+  const_number
+  const_bool
+  const_string
+  eq
+  neq
+  if_node
+  to_bool
+  to_number
+  to_string
+  primitive_registry)
+ (libraries hackonomics_executors))

@@ -1,0 +1,14 @@
+{
+  "nodeType": "to_number",
+  "set": "primitive",
+  "displayName": "To Number",
+  "description": "Converts a value into a numeric representation.",
+  "inputs": [
+    { "index": 0, "name": "value", "arity": "ONE", "valueType": "Value" }
+  ],
+  "outputs": [
+    { "index": 0, "name": "result", "arity": "ONE", "valueType": "NumVal" }
+  ],
+  "dataFields": [],
+  "executorKey": "to_number"
+}

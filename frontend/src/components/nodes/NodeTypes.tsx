@@ -1,14 +1,12 @@
 import { useMemo } from "react";
 import type { CSSProperties } from "react";
-import { Handle, Position, type NodeProps, type NodeTypes, useReactFlow } from "reactflow";
+import { Handle, Position, type Edge, type NodeProps, type NodeTypes, useReactFlow, useStore } from "reactflow";
 import {
-  NODE_BODY_PADDING,
-  NODE_CARD_BORDER,
-  NODE_CARD_RADIUS,
   NODE_HANDLE_STYLE,
-  NODE_TITLE_ALPHA,
-  NODE_TITLE_PADDING,
-  withAlpha,
+  UI_CANVAS,
+  UI_ELEVATED,
+  UI_TEXT_PRIMARY,
+  UI_TEXT_SECONDARY,
 } from "./base/nodeCardStyle";
 
 export type JsonScalar = string | number | boolean | null;
@@ -49,6 +47,7 @@ export type NodeData = {
   outputs: NodeIoPort[];
   dataFields: NodeIoDataField[];
   fieldValues: Record<string, JsonScalar>;
+  inlineInputValues?: Record<string, number>;
   runtimeResult?: NodeRuntimeResult;
 };
 
@@ -60,8 +59,14 @@ export type NodePaletteItem = {
 };
 
 type NodeVisual = {
-  accent: string;
+  background: string;
+  border: string;
+  title: string;
+  sub: string;
+  handle: string;
   color: string;
+  category: string;
+  borderWidth: number;
 };
 
 export type NodeRegistry = {
@@ -72,14 +77,49 @@ export type NodeRegistry = {
   getNodeVisual: (type: string) => NodeVisual | undefined;
 };
 
-function hashToAccentColor(text: string): string {
-  let hash = 0;
-  for (let i = 0; i < text.length; i += 1) {
-    hash = (hash << 5) - hash + text.charCodeAt(i);
-    hash |= 0;
-  }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue} 74% 44%)`;
+const CATEGORY_THEMES = {
+  market: { bg: "#0F1A14", border: "#1D9E75", title: "#5DCAA5", sub: "#1D9E75", category: "market data", borderWidth: 1.5 },
+  const: { bg: "#111118", border: "#5F5E5A", title: "#D3D1C7", sub: "#5F5E5A", category: "constant", borderWidth: 1.5 },
+  math: { bg: "#0D1520", border: "#185FA5", title: "#85B7EB", sub: "#378ADD", category: "math", borderWidth: 1.5 },
+  compare: { bg: "#1A1510", border: "#854F0B", title: "#EF9F27", sub: "#BA7517", category: "comparison", borderWidth: 1.5 },
+  logic: { bg: "#1E1B38", border: "#534AB7", title: "#AFA9EC", sub: "#7F77DD", category: "logic", borderWidth: 1.5 },
+  convert: { bg: "#1A130E", border: "#993C1D", title: "#F0997B", sub: "#D85A30", category: "type conversion", borderWidth: 1.5 },
+  derived: { bg: "#1A1020", border: "#993556", title: "#ED93B1", sub: "#D4537E", category: "derived metric", borderWidth: 1.5 },
+  flow: { bg: "#1A1608", border: "#EF9F27", title: "#FAC775", sub: "#EF9F27", category: "flow control", borderWidth: 2 },
+} as const;
+
+type CategoryTheme = keyof typeof CATEGORY_THEMES;
+
+export const MATH_NODE_TYPES = ["add", "subtract", "multiply", "divide", "negate"] as const;
+
+export function isMathNodeType(nodeType: string): boolean {
+  return (MATH_NODE_TYPES as readonly string[]).includes(nodeType);
+}
+
+function getNodeTheme(nodeType: string): CategoryTheme {
+  if (nodeType.startsWith("fetch_")) return "market";
+  if (nodeType.startsWith("const_")) return "const";
+  if (isMathNodeType(nodeType)) return "math";
+  if (["eq", "neq", "gt", "gte", "lt", "lte", "between"].includes(nodeType)) return "compare";
+  if (["and", "or", "not"].includes(nodeType)) return "logic";
+  if (["to_number", "to_string", "to_bool"].includes(nodeType)) return "convert";
+  if (["abs", "average_2", "clamp", "percent_change"].includes(nodeType)) return "derived";
+  if (nodeType === "if") return "flow";
+  return "const";
+}
+
+function getNodeVisualForType(nodeType: string): NodeVisual {
+  const theme = CATEGORY_THEMES[getNodeTheme(nodeType)];
+  return {
+    background: theme.bg,
+    border: theme.border,
+    title: theme.title,
+    sub: theme.sub,
+    handle: theme.border,
+    color: theme.bg,
+    category: theme.category,
+    borderWidth: theme.borderWidth,
+  };
 }
 
 function toFallbackFieldValue(field: NodeIoDataField): JsonScalar {
@@ -102,19 +142,39 @@ function getHandleTop(index: number, total: number): string {
   return `${((index + 1) / (total + 1)) * 100}%`;
 }
 
+function NodeHeader({ visual, name }: { visual: NodeVisual; name: string }) {
+  return (
+    <div style={{ padding: "10px 14px 8px" }}>
+      <div style={{ fontSize: 12, fontWeight: 500, color: visual.title }}>{name}</div>
+      <div
+        style={{
+          fontSize: 9,
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          color: visual.sub,
+          marginTop: 1,
+        }}
+      >
+        {visual.category}
+      </div>
+    </div>
+  );
+}
+
 function DynamicNode({ id, data }: NodeProps<NodeData>) {
   const { setNodes } = useReactFlow();
+  const edges = useStore((state) => state.edges);
 
   const inputPorts = useMemo(() => data.inputs ?? [], [data.inputs]);
   const outputPorts = useMemo(() => data.outputs ?? [], [data.outputs]);
   const dataFields = useMemo(() => data.dataFields ?? [], [data.dataFields]);
   const fieldValues = data.fieldValues ?? {};
+  const inlineInputValues = data.inlineInputValues ?? {};
   const runtimeResult = data.runtimeResult;
   const hasRuntimeResult = runtimeResult && Object.keys(runtimeResult).length > 0;
+  const isMathNode = isMathNodeType(data.label);
 
-  const accent = hashToAccentColor(data.label);
-  const runtimeGlowTight = withAlpha(accent, 0.42);
-  const runtimeGlowWide = withAlpha(accent, 0.24);
+  const visual = getNodeVisualForType(data.label);
 
   const setFieldValue = (key: string, value: JsonScalar) => {
     setNodes((nodes) =>
@@ -136,6 +196,33 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
     );
   };
 
+  const setInlineInputValue = (portIndex: number, rawValue: string) => {
+    setNodes((nodes) =>
+      nodes.map((node) => {
+        if (node.id !== id) return node;
+        const nodeData = node.data as NodeData;
+        const nextInlineInputValues = { ...(nodeData.inlineInputValues ?? {}) };
+        const key = String(portIndex);
+
+        if (rawValue.trim() === "") {
+          delete nextInlineInputValues[key];
+        } else {
+          const parsed = Number(rawValue);
+          nextInlineInputValues[key] = Number.isFinite(parsed) ? parsed : 0;
+        }
+
+        return {
+          ...node,
+          data: {
+            ...nodeData,
+            inlineInputValues: nextInlineInputValues,
+            runtimeResult: undefined,
+          },
+        };
+      })
+    );
+  };
+
   return (
     <div
       style={{
@@ -146,17 +233,18 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
     >
       <div
         style={{
-          border: NODE_CARD_BORDER,
-          borderRadius: NODE_CARD_RADIUS,
-          background: "#ffffff",
-          fontFamily: "system-ui, sans-serif",
+          border: `${visual.borderWidth}px solid ${visual.border}`,
+          borderRadius: 10,
+          background: visual.background,
+          fontFamily: "monospace",
           display: "flex",
           flexDirection: "column",
           position: "relative",
           zIndex: 1,
+          minWidth: 160,
           boxShadow: hasRuntimeResult
-            ? `0 0 14px ${runtimeGlowTight}, 0 0 26px ${runtimeGlowWide}, 0 6px 14px rgba(15, 23, 42, 0.08)`
-            : undefined,
+            ? `0 0 0 1px ${visual.border}, 0 0 18px ${visual.border}55, 0 12px 28px rgba(0, 0, 0, 0.34)`
+            : "0 10px 24px rgba(0, 0, 0, 0.18)",
         }}
       >
         {inputPorts.map((port, idx) => (
@@ -167,6 +255,10 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
             position={Position.Left}
             style={{
               ...NODE_HANDLE_STYLE,
+              width: 10,
+              height: 10,
+              background: visual.handle,
+              border: "none",
               left: -8,
               top: getHandleTop(idx, inputPorts.length),
               transform: "translateY(-50%)",
@@ -179,31 +271,21 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
           style={{
             position: "relative",
             zIndex: 2,
-            borderRadius: NODE_CARD_RADIUS,
+            borderRadius: 10,
             overflow: "hidden",
-            background: "#ffffff",
+            background: visual.background,
           }}
         >
-          <div
-            style={{
-              padding: NODE_TITLE_PADDING,
-              background: withAlpha(accent, NODE_TITLE_ALPHA),
-              borderBottom: dataFields.length > 0 || hasRuntimeResult ? "1px solid #e5e7eb" : undefined,
-            }}
-          >
-            <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.1, color: "#111827" }}>
-              {data.label}
-            </div>
-          </div>
+          <NodeHeader visual={visual} name={data.label} />
 
           {dataFields.length > 0 && (
             <div
               style={{
-                padding: NODE_BODY_PADDING,
+                padding: "0 10px 10px",
                 display: "flex",
                 flexDirection: "column",
                 gap: 8,
-                background: "#ffffff",
+                background: visual.background,
               }}
             >
               {dataFields.map((field) => {
@@ -216,23 +298,48 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
                     style={{
                       display: "grid",
                       gridTemplateColumns: inputType === "checkbox" ? "1fr auto" : "1fr",
-                      gap: 6,
-                      color: "#111827",
+                      gap: 4,
+                      color: UI_TEXT_PRIMARY,
                       fontSize: 12,
                     }}
                   >
-                    <span style={{ fontWeight: 600 }}>
+                    <span
+                      style={{
+                        fontSize: 9,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                        color: visual.sub,
+                        marginBottom: 2,
+                      }}
+                    >
                       {field.name}
                       {field.required ? " *" : ""}
                     </span>
                     {inputType === "checkbox" ? (
-                      <input
-                        className="nodrag"
-                        type="checkbox"
-                        checked={Boolean(value)}
-                        onChange={(event) => setFieldValue(field.name, event.target.checked)}
-                        style={{ width: 16, height: 16 }}
-                      />
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "2px 0 4px",
+                        }}
+                      >
+                        <input
+                          className="nodrag"
+                          type="checkbox"
+                          checked={Boolean(value)}
+                          onChange={(event) => setFieldValue(field.name, event.target.checked)}
+                          style={{
+                            width: 14,
+                            height: 14,
+                            margin: 0,
+                            accentColor: visual.border,
+                          }}
+                        />
+                        <span style={{ fontSize: 11, color: UI_TEXT_SECONDARY }}>
+                          {Boolean(value) ? "true" : "false"}
+                        </span>
+                      </label>
                     ) : (
                       <input
                         className="nodrag"
@@ -252,10 +359,61 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
                           }
                           setFieldValue(field.name, event.target.value);
                         }}
-                        style={inputStyle}
+                        style={inputStyle(visual)}
                       />
                     )}
-                    <span style={{ color: "#6b7280", fontSize: 11 }}>{field.valueType}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+
+          {isMathNode && inputPorts.length > 0 && (
+            <div
+              style={{
+                padding: "0 10px 10px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                background: visual.background,
+              }}
+            >
+              {inputPorts.map((port) => {
+                const hasWire = hasIncomingEdgeForPort(edges, id, port, inputPorts.length);
+                const inlineValue = inlineInputValues[String(port.index)];
+
+                return (
+                  <label
+                    key={`inline-port-${port.index}`}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr",
+                      gap: 4,
+                      color: UI_TEXT_PRIMARY,
+                      fontSize: 12,
+                      opacity: hasWire ? 0.65 : 1,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 9,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                        color: visual.sub,
+                        marginBottom: 2,
+                      }}
+                    >
+                      {port.name}
+                      {hasWire ? " (wired)" : " (fallback)"}
+                    </span>
+                    <input
+                      className="nodrag"
+                      type="number"
+                      value={typeof inlineValue === "number" ? inlineValue : ""}
+                      placeholder="0"
+                      onChange={(event) => setInlineInputValue(port.index, event.target.value)}
+                      style={inputStyle(visual)}
+                    />
                   </label>
                 );
               })}
@@ -271,6 +429,11 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
             position={Position.Right}
             style={{
               ...NODE_HANDLE_STYLE,
+              width: 10,
+              height: 10,
+              background:
+                data.label === "if" && port.index === 0 ? "#639922" : data.label === "if" && port.index === 1 ? "#E24B4A" : visual.handle,
+              border: data.label === "if" ? `2px solid ${UI_CANVAS}` : "none",
               right: -8,
               top: getHandleTop(idx, outputPorts.length),
               transform: "translateY(-50%)",
@@ -289,9 +452,10 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
             marginLeft: 16,
             marginRight: 16,
             padding: "22px 14px 12px",
-            borderRadius: NODE_CARD_RADIUS - 4,
-            background: "#ffffff",
-            boxShadow: "0 8px 14px rgba(15, 23, 42, 0.14)",
+            borderRadius: 8,
+            background: UI_ELEVATED,
+            border: `1px solid ${visual.border}`,
+            boxShadow: "0 12px 26px rgba(0, 0, 0, 0.28)",
             pointerEvents: "none",
           }}
         >
@@ -310,7 +474,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
                 fontWeight: 700,
                 letterSpacing: "0.08em",
                 textTransform: "uppercase",
-                color: "#6b7280",
+                color: visual.sub,
               }}
             >
               Output
@@ -319,8 +483,8 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
               style={{
                 padding: "3px 8px",
                 borderRadius: 999,
-                background: withAlpha(accent, 0.14),
-                color: "#111827",
+                background: `${visual.border}22`,
+                color: UI_TEXT_PRIMARY,
                 fontSize: 10,
                 fontWeight: 700,
                 letterSpacing: "0.04em",
@@ -335,7 +499,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
               margin: 0,
               whiteSpace: "pre-wrap",
               wordBreak: "break-word",
-              color: "#111827",
+              color: UI_TEXT_PRIMARY,
               fontSize: 11,
               lineHeight: 1.35,
               fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -349,16 +513,30 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
   );
 }
 
-const inputStyle: CSSProperties = {
-  border: "1px solid #d1d5db",
-  borderRadius: 8,
-  padding: "6px 8px",
-  fontSize: 12,
-  lineHeight: 1.2,
-  outline: "none",
-  background: "white",
-  color: "black",
-};
+function inputStyle(visual: NodeVisual): CSSProperties {
+  return {
+    border: "1px solid #2a2a3a",
+    borderRadius: 6,
+    padding: "6px 9px",
+    fontSize: 11,
+    lineHeight: 1.2,
+    outline: "none",
+    background: UI_CANVAS,
+    color: UI_TEXT_SECONDARY,
+    fontFamily: "monospace",
+    boxSizing: "border-box",
+    width: "100%",
+    boxShadow: `inset 0 0 0 1px ${visual.border}10`,
+  };
+}
+
+function hasIncomingEdgeForPort(edges: Edge[], nodeId: string, port: NodeIoPort, inputCount: number): boolean {
+  return edges.some((edge) => {
+    if (edge.target !== nodeId) return false;
+    if (edge.targetHandle === `in:${port.index}`) return true;
+    return edge.targetHandle == null && inputCount === 1 && port.index === 0;
+  });
+}
 
 export function createNodeRegistry(catalog: NodeIoCatalog): NodeRegistry {
   const nodeDataByType: Record<string, NodeData> = {};
@@ -379,10 +557,7 @@ export function createNodeRegistry(catalog: NodeIoCatalog): NodeRegistry {
       fieldValues,
     };
 
-    nodeVisualByType[node.nodeType] = {
-      accent: hashToAccentColor(node.nodeType),
-      color: "#ffffff",
-    };
+    nodeVisualByType[node.nodeType] = getNodeVisualForType(node.nodeType);
     reactFlowTypes[node.nodeType] = DynamicNode;
   }
 

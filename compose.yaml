@@ -1,0 +1,15 @@
+services:
+  send-back:
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
+    environment:
+      OCAML_WORKER_COMMAND: /app/worker
+    ports:
+      - 8080:8080
+  send-front:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - 5173:80

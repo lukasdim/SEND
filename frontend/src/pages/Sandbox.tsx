@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { v4 as uuidv4 } from "uuid";
 import ReactFlow, {
   Background,
   type Connection,
@@ -736,7 +737,7 @@ function SandboxInner() {
       }
 
       const newNode: Node = {
-        id: `n-${crypto.randomUUID()}`,
+        id: `n-${uuidv4()}`,
         type,
         position,
         data: nodeData,
@@ -828,7 +829,7 @@ function SandboxInner() {
     setIsStrategySaving(true);
     try {
       const strategyName = currentStrategyName ?? SANDBOX_DEFAULT_UNTITLED_STRATEGY_NAME;
-      const strategyId = currentStrategyId ?? `s-${crypto.randomUUID()}`;
+      const strategyId = currentStrategyId ?? `s-${uuidv4()}`;
       const materializedGraph = materializeInlineMathInputs(nodes, edges);
       const payloadGraph = buildBackendGraphPayload(materializedGraph);
 

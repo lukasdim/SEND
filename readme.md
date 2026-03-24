@@ -34,6 +34,12 @@ Modules are intended to be completed in a specific order, but it is not mandator
 
 These modules are intended to be broad and intesive, however, time intensive to write. To combat this, information will be manually collected and referenced by AI to generate the readings for these modules. The sources for the information used in each module will be present at the bottom of its page.
 
+# Docker runtime notes
+
+- The backend container packages the OCaml worker as a local executable and starts it through `ocaml.worker.command`.
+- In Docker Compose, `OCAML_WORKER_COMMAND=/app/worker` is the supported container runtime configuration.
+- Outside Docker, the backend may still rely on the existing local source checkout fallback when `ocaml.worker.command` is left empty.
+
 # How we built it
 
 # Challenges we ran into

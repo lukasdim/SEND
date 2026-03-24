@@ -3,6 +3,7 @@
   "set": "primitive",
   "displayName": "To String",
   "description": "Converts a value into a string representation.",
+  "theme": "convert",
   "inputs": [
     { "index": 0, "name": "value", "arity": "ONE", "valueType": "Value" }
   ],

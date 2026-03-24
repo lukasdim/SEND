@@ -3,6 +3,7 @@
   "set": "primitive",
   "displayName": "Greater Than Or Equal",
   "description": "Checks whether the left number is greater than or equal to the right number.",
+  "theme": "compare",
   "inputs": [
     { "index": 0, "name": "left", "arity": "ONE", "valueType": "NumVal" },
     { "index": 1, "name": "right", "arity": "ONE", "valueType": "NumVal" }

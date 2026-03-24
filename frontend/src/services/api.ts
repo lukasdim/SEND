@@ -1,5 +1,5 @@
 import { SANDBOX_STRATEGIES_API } from "../config/sandboxConfig";
-import type { JsonScalar, NodeIoCatalog, NodeRuntimeResult } from "../components/nodes/NodeTypes";
+import type { CategoryTheme, JsonScalar, NodeIoCatalog, NodeRuntimeResult } from "../components/nodes/NodeTypes";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -97,7 +97,9 @@ function isNodeIoCatalog(payload: unknown): payload is NodeIoCatalog {
   return payload.nodes.every((node) => {
     if (!isRecord(node)) return false;
     if (typeof node.nodeType !== "string") return false;
+    if (typeof node.displayName !== "string") return false;
     if (typeof node.nodeClass !== "string") return false;
+    if (!isCategoryTheme(node.theme)) return false;
     if (!Array.isArray(node.inputs) || !Array.isArray(node.outputs) || !Array.isArray(node.dataFields)) {
       return false;
     }
@@ -143,4 +145,11 @@ function isJsonScalar(value: unknown): value is JsonScalar {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isCategoryTheme(value: unknown): value is CategoryTheme {
+  return (
+    typeof value === "string" &&
+    ["market", "const", "math", "compare", "logic", "convert", "derived", "flow"].includes(value)
+  );
 }

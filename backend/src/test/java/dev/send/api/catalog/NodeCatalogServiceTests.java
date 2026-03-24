@@ -58,6 +58,20 @@ class NodeCatalogServiceTests {
         assertTrue(catalog.nodes().stream().anyMatch(node -> node.nodeType().equals("fetch_price")));
         assertTrue(catalog.nodes().stream().anyMatch(node -> node.nodeClass().equals("FETCH")));
         assertEquals(
+                "market",
+                catalog.nodes().stream()
+                        .filter(node -> node.nodeType().equals("fetch_price"))
+                        .findFirst()
+                        .orElseThrow()
+                        .theme());
+        assertEquals(
+                "Fetch Price",
+                catalog.nodes().stream()
+                        .filter(node -> node.nodeType().equals("fetch_price"))
+                        .findFirst()
+                        .orElseThrow()
+                        .displayName());
+        assertEquals(
                 "NumVal",
                 catalog.nodes().stream()
                         .filter(node -> node.nodeType().equals("add"))

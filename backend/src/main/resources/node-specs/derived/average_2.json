@@ -3,6 +3,7 @@
   "set": "derived",
   "displayName": "Average Of Two",
   "description": "Computes the average of two numbers using primitive nodes.",
+  "theme": "derived",
   "inputs": [
     { "index": 0, "name": "a", "arity": "ONE", "valueType": "NumVal" },
     { "index": 1, "name": "b", "arity": "ONE", "valueType": "NumVal" }

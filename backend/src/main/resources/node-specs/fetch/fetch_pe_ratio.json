@@ -3,6 +3,7 @@
   "set": "fetch",
   "displayName": "Fetch P/E Ratio",
   "description": "Fetches the price-to-earnings ratio for a configured ticker.",
+  "theme": "market",
   "inputs": [],
   "outputs": [
     { "index": 0, "name": "pe_ratio", "arity": "ONE", "valueType": "NumVal" }

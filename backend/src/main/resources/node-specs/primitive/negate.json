@@ -3,6 +3,7 @@
   "set": "primitive",
   "displayName": "Negate",
   "description": "Negates a number.",
+  "theme": "math",
   "inputs": [
     { "index": 0, "name": "value", "arity": "ONE", "valueType": "NumVal" }
   ],

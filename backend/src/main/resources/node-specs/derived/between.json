@@ -3,6 +3,7 @@
   "set": "derived",
   "displayName": "Between",
   "description": "Checks whether a number lies between a minimum and maximum, inclusive.",
+  "theme": "compare",
   "inputs": [
     { "index": 0, "name": "value", "arity": "ONE", "valueType": "NumVal" },
     { "index": 1, "name": "min", "arity": "ONE", "valueType": "NumVal" },

@@ -18,7 +18,9 @@ export type NodeIoCatalog = {
 
 export type NodeIoDefinition = {
   nodeType: string;
+  displayName: string;
   nodeClass: string;
+  theme: CategoryTheme;
   inputs: NodeIoPort[];
   outputs: NodeIoPort[];
   dataFields: NodeIoDataField[];
@@ -41,8 +43,10 @@ export type NodeIoDataField = {
 };
 
 export type NodeData = {
-  label: string;
+  nodeType: string;
+  displayName: string;
   nodeClass: string;
+  theme: CategoryTheme;
   inputs: NodeIoPort[];
   outputs: NodeIoPort[];
   dataFields: NodeIoDataField[];
@@ -88,7 +92,7 @@ const CATEGORY_THEMES = {
   flow: { bg: "#1A1608", border: "#EF9F27", title: "#FAC775", sub: "#EF9F27", category: "flow control", borderWidth: 2 },
 } as const;
 
-type CategoryTheme = keyof typeof CATEGORY_THEMES;
+export type CategoryTheme = keyof typeof CATEGORY_THEMES;
 
 export const MATH_NODE_TYPES = ["add", "subtract", "multiply", "divide", "negate"] as const;
 
@@ -96,29 +100,24 @@ export function isMathNodeType(nodeType: string): boolean {
   return (MATH_NODE_TYPES as readonly string[]).includes(nodeType);
 }
 
-function getNodeTheme(nodeType: string): CategoryTheme {
-  if (nodeType.startsWith("fetch_")) return "market";
-  if (nodeType.startsWith("const_")) return "const";
-  if (isMathNodeType(nodeType)) return "math";
-  if (["eq", "neq", "gt", "gte", "lt", "lte", "between"].includes(nodeType)) return "compare";
-  if (["and", "or", "not"].includes(nodeType)) return "logic";
-  if (["to_number", "to_string", "to_bool"].includes(nodeType)) return "convert";
-  if (["abs", "average_2", "clamp", "percent_change"].includes(nodeType)) return "derived";
-  if (nodeType === "if") return "flow";
+function getNodeTheme(theme: string | undefined): CategoryTheme {
+  if (theme && theme in CATEGORY_THEMES) {
+    return theme as CategoryTheme;
+  }
   return "const";
 }
 
-function getNodeVisualForType(nodeType: string): NodeVisual {
-  const theme = CATEGORY_THEMES[getNodeTheme(nodeType)];
+function getNodeVisualForTheme(theme: string | undefined): NodeVisual {
+  const resolvedTheme = CATEGORY_THEMES[getNodeTheme(theme)];
   return {
-    background: theme.bg,
-    border: theme.border,
-    title: theme.title,
-    sub: theme.sub,
-    handle: theme.border,
-    color: theme.bg,
-    category: theme.category,
-    borderWidth: theme.borderWidth,
+    background: resolvedTheme.bg,
+    border: resolvedTheme.border,
+    title: resolvedTheme.title,
+    sub: resolvedTheme.sub,
+    handle: resolvedTheme.border,
+    color: resolvedTheme.bg,
+    category: resolvedTheme.category,
+    borderWidth: resolvedTheme.borderWidth,
   };
 }
 
@@ -172,9 +171,9 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
   const inlineInputValues = data.inlineInputValues ?? {};
   const runtimeResult = data.runtimeResult;
   const hasRuntimeResult = runtimeResult && Object.keys(runtimeResult).length > 0;
-  const isMathNode = isMathNodeType(data.label);
+  const isMathNode = isMathNodeType(data.nodeType);
 
-  const visual = getNodeVisualForType(data.label);
+  const visual = getNodeVisualForTheme(data.theme);
 
   const setFieldValue = (key: string, value: JsonScalar) => {
     setNodes((nodes) =>
@@ -276,7 +275,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
             background: visual.background,
           }}
         >
-          <NodeHeader visual={visual} name={data.label} />
+          <NodeHeader visual={visual} name={data.displayName} />
 
           {dataFields.length > 0 && (
             <div
@@ -432,8 +431,8 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
               width: 10,
               height: 10,
               background:
-                data.label === "if" && port.index === 0 ? "#639922" : data.label === "if" && port.index === 1 ? "#E24B4A" : visual.handle,
-              border: data.label === "if" ? `2px solid ${UI_CANVAS}` : "none",
+                data.nodeType === "if" && port.index === 0 ? "#639922" : data.nodeType === "if" && port.index === 1 ? "#E24B4A" : visual.handle,
+              border: data.nodeType === "if" ? `2px solid ${UI_CANVAS}` : "none",
               right: -8,
               top: getHandleTop(idx, outputPorts.length),
               transform: "translateY(-50%)",
@@ -549,21 +548,23 @@ export function createNodeRegistry(catalog: NodeIoCatalog): NodeRegistry {
     ) as Record<string, JsonScalar>;
 
     nodeDataByType[node.nodeType] = {
-      label: node.nodeType,
+      nodeType: node.nodeType,
+      displayName: node.displayName,
       nodeClass: node.nodeClass,
+      theme: node.theme,
       inputs: node.inputs,
       outputs: node.outputs,
       dataFields: node.dataFields,
       fieldValues,
     };
 
-    nodeVisualByType[node.nodeType] = getNodeVisualForType(node.nodeType);
+    nodeVisualByType[node.nodeType] = getNodeVisualForTheme(node.theme);
     reactFlowTypes[node.nodeType] = DynamicNode;
   }
 
   const nodePalette = catalog.nodes.map((node) => ({
     type: node.nodeType,
-    label: node.nodeType,
+    label: node.displayName,
     inputCount: node.inputs.length,
     outputCount: node.outputs.length,
   }));

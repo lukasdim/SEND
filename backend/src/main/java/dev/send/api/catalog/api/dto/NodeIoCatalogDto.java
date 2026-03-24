@@ -10,7 +10,9 @@ public record NodeIoCatalogDto(List<NodeIoDefinitionDto> nodes) {
 
     public record NodeIoDefinitionDto(
             String nodeType,
+            String displayName,
             String nodeClass,
+            String theme,
             List<NodeIoPortDto> inputs,
             List<NodeIoPortDto> outputs,
             List<NodeIoDataFieldDto> dataFields) {}

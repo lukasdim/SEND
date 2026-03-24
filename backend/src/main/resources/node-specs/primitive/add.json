@@ -3,6 +3,7 @@
   "set": "primitive",
   "displayName": "Add",
   "description": "Adds two numbers.",
+  "theme": "math",
   "inputs": [
     { "index": 0, "name": "a", "arity": "ONE", "valueType": "NumVal" },
     { "index": 1, "name": "b", "arity": "ONE", "valueType": "NumVal" }

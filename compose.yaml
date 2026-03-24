@@ -12,6 +12,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        SANDBOX_BACKEND_PORT: "9119"
+        VITE_SANDBOX_BACKEND_HOST: "localhost"
+        VITE_SANDBOX_BACKEND_PORT: "9119"
     ports:
       - 5173:80

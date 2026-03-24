@@ -5,12 +5,20 @@ export const SANDBOX_DEFAULT_UNTITLED_STRATEGY_NAME = "Untitled Strategy";
 
 const DEFAULT_SANDBOX_BACKEND_PORT = "9119";
 
+function resolveSandboxBackendHost() {
+  const configuredHost = import.meta.env.VITE_SANDBOX_BACKEND_HOST?.trim();
+  if (!configuredHost) {
+    throw new Error("VITE_SANDBOX_BACKEND_HOST must be configured for the sandbox frontend.");
+  }
+  return configuredHost;
+}
+
 function resolveSandboxBackendPort() {
-  const configuredPort = import.meta.env.SANDBOX_BACKEND_PORT?.trim();
+  const configuredPort = import.meta.env.VITE_SANDBOX_BACKEND_PORT?.trim();
   return configuredPort && configuredPort.length > 0 ? configuredPort : DEFAULT_SANDBOX_BACKEND_PORT;
 }
 
-const SANDBOX_STRATEGIES_API_BASE = `http://localhost:${resolveSandboxBackendPort()}`;
+const SANDBOX_STRATEGIES_API_BASE = `http://${resolveSandboxBackendHost()}:${resolveSandboxBackendPort()}`;
 
 export const SANDBOX_STRATEGIES_API = {
   baseUrl: SANDBOX_STRATEGIES_API_BASE,

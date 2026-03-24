@@ -1,6 +1,8 @@
 # build stage
 FROM node:22-alpine AS builder
 WORKDIR /app
+ARG VITE_SANDBOX_BACKEND_PORT=9116
+ENV VITE_SANDBOX_BACKEND_PORT=$VITE_SANDBOX_BACKEND_PORT
 
 COPY package*.json ./
 RUN npm ci

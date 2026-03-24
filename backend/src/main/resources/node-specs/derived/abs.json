@@ -3,6 +3,7 @@
   "set": "derived",
   "displayName": "Absolute Value",
   "description": "Returns the absolute value of a number using primitive nodes.",
+  "theme": "derived",
   "inputs": [
     { "index": 0, "name": "value", "arity": "ONE", "valueType": "NumVal" }
   ],

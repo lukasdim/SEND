@@ -3,6 +3,7 @@
   "set": "fetch",
   "displayName": "Fetch Price",
   "description": "Fetches a price value for a configured ticker and price field.",
+  "theme": "market",
   "inputs": [],
   "outputs": [
     { "index": 0, "name": "price", "arity": "ONE", "valueType": "NumVal" }

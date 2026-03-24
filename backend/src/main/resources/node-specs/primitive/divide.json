@@ -3,6 +3,7 @@
   "set": "primitive",
   "displayName": "Divide",
   "description": "Divides the first number by the second.",
+  "theme": "math",
   "inputs": [
     { "index": 0, "name": "numerator", "arity": "ONE", "valueType": "NumVal" },
     { "index": 1, "name": "denominator", "arity": "ONE", "valueType": "NumVal" }

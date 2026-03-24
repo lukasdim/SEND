@@ -48,7 +48,9 @@ public class NodeCatalogService {
         List<NodeIoCatalogDto.NodeIoDefinitionDto> nodes = specs.stream()
                 .map(spec -> new NodeIoCatalogDto.NodeIoDefinitionDto(
                         spec.nodeType(),
+                        spec.payload().path("displayName").asText(spec.nodeType()),
                         spec.set().name(),
+                        spec.payload().path("theme").asText("const"),
                         toPorts(spec.payload().path("inputs")),
                         toPorts(spec.payload().path("outputs")),
                         toDataFields(spec.payload().path("dataFields"))))

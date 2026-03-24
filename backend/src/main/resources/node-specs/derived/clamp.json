@@ -3,6 +3,7 @@
   "set": "derived",
   "displayName": "Clamp",
   "description": "Clamps a number between a minimum and maximum using primitive nodes.",
+  "theme": "derived",
   "inputs": [
     { "index": 0, "name": "value", "arity": "ONE", "valueType": "NumVal" },
     { "index": 1, "name": "min", "arity": "ONE", "valueType": "NumVal" },

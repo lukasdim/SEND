@@ -3,6 +3,7 @@
   "set": "primitive",
   "displayName": "And",
   "description": "Returns true if both boolean inputs are true.",
+  "theme": "logic",
   "inputs": [
     { "index": 0, "name": "left", "arity": "ONE", "valueType": "BoolVal" },
     { "index": 1, "name": "right", "arity": "ONE", "valueType": "BoolVal" }

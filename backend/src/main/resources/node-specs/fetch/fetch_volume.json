@@ -3,6 +3,7 @@
   "set": "fetch",
   "displayName": "Fetch Volume",
   "description": "Fetches a volume value for a configured ticker.",
+  "theme": "market",
   "inputs": [],
   "outputs": [
     { "index": 0, "name": "volume", "arity": "ONE", "valueType": "NumVal" }

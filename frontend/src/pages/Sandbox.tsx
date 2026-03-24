@@ -225,8 +225,10 @@ function materializeInlineMathInputs(nodes: Node[], edges: Edge[]): FrontendGrap
           y: node.position.y + port.index * 56,
         },
         data: {
-          label: "const_number",
+          nodeType: "const_number",
+          displayName: "Constant Number",
           nodeClass: "PRIMITIVE",
+          theme: "const",
           inputs: [],
           outputs: [],
           dataFields: [],
@@ -305,7 +307,7 @@ function NodeTemplatePreview({
     >
       {node.inputCount > 0 && <div style={previewLeftHandleStyle(visual.handle)} />}
       <div style={{ padding: "10px 14px 8px" }}>
-        <div style={{ fontSize: 12, fontWeight: 500, color: visual.title }}>{previewData.label}</div>
+        <div style={{ fontSize: 12, fontWeight: 500, color: visual.title }}>{previewData.displayName}</div>
         <div
           style={{
             fontSize: 9,

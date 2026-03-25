@@ -8,12 +8,11 @@ spring:
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: none
 
 market-data:
   bootstrap-tracked-symbols:
-    - AAPL
-    - SPY
+    []
   scheduler:
     prices:
       enabled: false

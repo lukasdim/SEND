@@ -1,6 +1,28 @@
 spring:
   application:
     name: send-api
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+market-data:
+  bootstrap-tracked-symbols:
+    - AAPL
+    - SPY
+  scheduler:
+    prices:
+      enabled: false
+      cron: "0 0 18 * * MON-FRI"
+      zone: "America/New_York"
+    fundamentals:
+      enabled: false
+      cron: "0 0 6 * * MON-FRI"
+      zone: "America/New_York"
 
 ocaml:
   worker:

@@ -1,12 +1,36 @@
 services:
+  send-db:
+    image: timescale/timescaledb:latest-pg16
+    container_name: send-db
+    environment:
+      POSTGRES_DB: send
+      POSTGRES_USER: send_user
+      POSTGRES_PASSWORD: change_me
+    ports:
+      - "5432:5432"
+    volumes:
+      - send_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U send_user -d send" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   send-back:
     build:
       context: .
       dockerfile: ./backend/Dockerfile
     environment:
       OCAML_WORKER_COMMAND: /app/worker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://send-db:5432/send
+      SPRING_DATASOURCE_USERNAME: send_user
+      SPRING_DATASOURCE_PASSWORD: change_me
     ports:
-      - 9119:8080
+      - "9119:8080"
+    depends_on:
+      send-db:
+        condition: service_healthy
+
   send-front:
     build:
       context: ./frontend
@@ -15,4 +39,9 @@ services:
         VITE_SANDBOX_BACKEND_HOST: "localhost"
         VITE_SANDBOX_BACKEND_PORT: "9119"
     ports:
-      - 5173:80
+      - "5173:80"
+    depends_on:
+      - send-back
+
+volumes:
+  send_db_data:

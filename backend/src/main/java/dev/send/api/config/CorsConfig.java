@@ -9,9 +9,15 @@ public class CorsConfig implements WebMvcConfigurer {
   @Override
   public void addCorsMappings(CorsRegistry registry) {
     registry.addMapping("/api/**")
-        .allowedOrigins("http://localhost:5173", "http://10.0.0.44:5173")
+        .allowedOrigins(
+            "https://sendsys.io",
+            "https://www.sendsys.io",
+            "http://localhost:5173", // remove after testing (or ad dev opt to enable)
+            "http://10.0.0.44:5173" // remove after testing (or ad dev opt to enable)
+        )
         .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
         .allowedHeaders("*")
-        .allowCredentials(true); // only if you use cookies
+        .allowCredentials(false) // for now! until users are implemented
+        .maxAge(3600);
   }
 }

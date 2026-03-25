@@ -97,6 +97,19 @@ class StrategyApiIntegrationTests {
     }
 
     @Test
+    void exposesBundledLogicexStrategyForTesting() throws Exception {
+        mockMvc.perform(get("/api/strategies"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == 'logicex')]").exists());
+
+        mockMvc.perform(get("/api/strategies/logicex"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("logicex"))
+                .andExpect(jsonPath("$.nodes.length()").value(13))
+                .andExpect(jsonPath("$.edges.length()").value(13));
+    }
+
+    @Test
     void testsCurrentGraphThroughOcamlWorkerAndReturnsFlatNodeResults() throws Exception {
         ObjectNode result = objectMapper.createObjectNode();
         result.putObject("c").put("sum", 5);

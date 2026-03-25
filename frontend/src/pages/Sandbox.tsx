@@ -88,6 +88,19 @@ type FrontendGraphPayload = {
   edges: Edge[];
 };
 
+type PaletteDragState = {
+  nodeType: string;
+  pointerId: number;
+  clientX: number;
+  clientY: number;
+  overCanvas: boolean;
+  flowPosition: {
+    x: number;
+    y: number;
+  } | null;
+  canvasZoom: number;
+};
+
 const NODE_CATEGORY_ORDER = [
   "market data",
   "constant",
@@ -444,11 +457,11 @@ function ErrorNotification({ message }: { message: string }) {
 }
 
 function SandboxInner() {
-  const { fitView, screenToFlowPosition } = useReactFlow();
+  const { fitView, getZoom, screenToFlowPosition } = useReactFlow();
   const [nodeRegistry, setNodeRegistry] = useState(() => createEmptyNodeRegistry());
   const [isNodeCatalogLoading, setIsNodeCatalogLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
-  const [pendingPointerNodeType, setPendingPointerNodeType] = useState<string | null>(null);
+  const [paletteDrag, setPaletteDrag] = useState<PaletteDragState | null>(null);
   const [strategies, setStrategies] = useState<StrategySummary[]>([]);
   const [isStrategiesLoading, setIsStrategiesLoading] = useState(false);
   const [strategiesError, setStrategiesError] = useState("");
@@ -458,6 +471,7 @@ function SandboxInner() {
   const [isStrategySaving, setIsStrategySaving] = useState(false);
   const [isStrategyTesting, setIsStrategyTesting] = useState(false);
   const timeoutRef = useRef<number | null>(null);
+  const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
 
   const {
     nodePalette,
@@ -498,6 +512,11 @@ function SandboxInner() {
       return leftCategory.localeCompare(rightCategory);
     });
   }, [getNodeVisual, nodePalette]);
+
+  const nodePaletteByType = useMemo(
+    () => new Map(nodePalette.map((node) => [node.type, node])),
+    [nodePalette]
+  );
 
   const notifyError = useCallback((message: string) => {
     if (timeoutRef.current !== null) {
@@ -700,7 +719,7 @@ function SandboxInner() {
         setEdges(loadedEdges);
         setCurrentStrategyId(typeof payload.id === "string" ? payload.id : strategy.id);
         setCurrentStrategyName(strategy.name);
-        setPendingPointerNodeType(null);
+        setPaletteDrag(null);
         window.requestAnimationFrame(() => {
           void fitView({ padding: 0.2, duration: 280 });
         });
@@ -754,69 +773,90 @@ function SandboxInner() {
     [getDefaultNodeData, isSupportedNodeType, nodes.length, notifyError, setNodes]
   );
 
-  const onDragStart = (event: React.DragEvent, nodeType: string) => {
-    event.dataTransfer.clearData();
+  const resolveCanvasDragState = useCallback(
+    (nodeType: string, pointerId: number, clientX: number, clientY: number): PaletteDragState => {
+      const canvasBounds = canvasWrapperRef.current?.getBoundingClientRect();
+      const overCanvas = Boolean(
+        canvasBounds &&
+          clientX >= canvasBounds.left &&
+          clientX <= canvasBounds.right &&
+          clientY >= canvasBounds.top &&
+          clientY <= canvasBounds.bottom
+      );
 
-    event.dataTransfer.setData("application/reactflow", nodeType);
-    event.dataTransfer.setData("text/plain", nodeType);
-    event.dataTransfer.setData("text", nodeType);
-    const dragElement = event.currentTarget as HTMLElement;
-    event.dataTransfer.setDragImage(
-      dragElement,
-      dragElement.offsetWidth / 2,
-      dragElement.offsetHeight / 2
-    );
-
-    event.dataTransfer.effectAllowed = "move";
-  };
+      return {
+        nodeType,
+        pointerId,
+        clientX,
+        clientY,
+        overCanvas,
+        flowPosition: overCanvas
+          ? screenToFlowPosition({
+              x: clientX,
+              y: clientY,
+            })
+          : null,
+        canvasZoom: overCanvas ? getZoom() : 1,
+      };
+    },
+    [getZoom, screenToFlowPosition]
+  );
 
   const onTemplatePointerDown = useCallback(
     (event: React.PointerEvent, nodeType: string) => {
-      if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
+      if (event.button !== 0) return;
       event.preventDefault();
-      setPendingPointerNodeType(nodeType);
+      setPaletteDrag(resolveCanvasDragState(nodeType, event.pointerId, event.clientX, event.clientY));
     },
-    []
+    [resolveCanvasDragState]
   );
 
-  const onDragOver = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-  }, []);
+  useEffect(() => {
+    if (!paletteDrag) return;
 
-  const onDrop = useCallback(
-    (event: React.DragEvent) => {
+    const handlePointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== paletteDrag.pointerId) return;
+      event.preventDefault();
+      setPaletteDrag(resolveCanvasDragState(paletteDrag.nodeType, event.pointerId, event.clientX, event.clientY));
+    };
+
+    const finishDrag = (event: PointerEvent) => {
+      if (event.pointerId !== paletteDrag.pointerId) return;
       event.preventDefault();
 
-      const type = event.dataTransfer.getData("application/reactflow");
-      const position = screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
-      tryCreateNode(type, position);
-    },
-    [screenToFlowPosition, tryCreateNode]
-  );
+      const finalDragState = resolveCanvasDragState(
+        paletteDrag.nodeType,
+        event.pointerId,
+        event.clientX,
+        event.clientY
+      );
 
-  const onPaneClick = useCallback(
-    (event: React.MouseEvent) => {
-      if (!pendingPointerNodeType) return;
+      if (finalDragState.overCanvas && finalDragState.flowPosition) {
+        tryCreateNode(finalDragState.nodeType, finalDragState.flowPosition);
+      }
 
-      const position = screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
+      setPaletteDrag(null);
+    };
 
-      tryCreateNode(pendingPointerNodeType, position);
-      setPendingPointerNodeType(null);
-    },
-    [pendingPointerNodeType, screenToFlowPosition, tryCreateNode]
-  );
+    const cancelDrag = () => {
+      setPaletteDrag(null);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove, { passive: false });
+    window.addEventListener("pointerup", finishDrag, { passive: false });
+    window.addEventListener("pointercancel", cancelDrag);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", cancelDrag);
+    };
+  }, [paletteDrag, resolveCanvasDragState, tryCreateNode]);
 
   const onCreateStrategy = useCallback(() => {
     setCurrentStrategyId(null);
     setCurrentStrategyName(SANDBOX_DEFAULT_UNTITLED_STRATEGY_NAME);
-    setPendingPointerNodeType(null);
+    setPaletteDrag(null);
     clearRuntimeResults();
   }, [clearRuntimeResults]);
 
@@ -887,6 +927,10 @@ function SandboxInner() {
       setIsStrategyTesting(false);
     }
   }, [currentStrategyId, edges, nodes, nodes.length, notifyError, setNodes]);
+
+  const activeDraggedNode = paletteDrag ? nodePaletteByType.get(paletteDrag.nodeType) : undefined;
+  const paletteGhostWidth = paletteDrag?.overCanvas ? SANDBOX_NODE_WIDTH : SANDBOX_LIBRARY_NODE_WIDTH;
+  const paletteGhostScale = paletteDrag?.overCanvas ? paletteDrag.canvasZoom : 1;
 
   return (
     <div
@@ -1027,10 +1071,11 @@ function SandboxInner() {
             {nodesInCategory.map((node) => (
               <div key={node.type} style={nodeTemplateWrapperStyle}>
                 <div
-                  draggable
-                  onDragStart={(e) => onDragStart(e, node.type)}
                   onPointerDown={(e) => onTemplatePointerDown(e, node.type)}
-                  style={nodeTemplateDraggableStyle}
+                  style={{
+                    ...nodeTemplateDraggableStyle,
+                    opacity: paletteDrag?.nodeType === node.type ? 0.35 : 1,
+                  }}
                 >
                   <NodeTemplatePreview
                     node={node}
@@ -1050,12 +1095,6 @@ function SandboxInner() {
             ? "Node palette is populated from backend metadata."
             : "Ports and editable fields are generated from backend metadata."}
         </div>
-
-        {pendingPointerNodeType && (
-          <div style={{ marginTop: 8, fontSize: 12, color: UI_ACCENT }}>
-            Touch mode: tap the canvas to place this node.
-          </div>
-        )}
 
         <div style={{ marginTop: 16, fontSize: 12, color: UI_TEXT_SECONDARY }}>Graph JSON</div>
         <pre
@@ -1077,7 +1116,7 @@ function SandboxInner() {
         </pre>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, height: "100%", width: "100%" }}>
+      <div ref={canvasWrapperRef} style={{ flex: 1, minHeight: 0, height: "100%", width: "100%" }}>
         <ReactFlow
           nodeTypes={nodeTypes}
           nodes={nodes}
@@ -1085,9 +1124,6 @@ function SandboxInner() {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
-          onDrop={onDrop}
-          onDragOver={onDragOver}
-          onPaneClick={onPaneClick}
           nodeOrigin={[0.5, 0.5]}
           fitView
         >
@@ -1100,6 +1136,32 @@ function SandboxInner() {
           <Controls />
         </ReactFlow>
       </div>
+
+      {paletteDrag && activeDraggedNode && (
+        <div
+          style={{
+            position: "fixed",
+            left: 0,
+            top: 0,
+            width: paletteGhostWidth,
+            transform: `translate(${paletteDrag.clientX}px, ${paletteDrag.clientY}px) translate(-50%, -50%) scale(${paletteGhostScale})`,
+            transformOrigin: "center center",
+            pointerEvents: "none",
+            zIndex: 40,
+            opacity: paletteDrag.overCanvas ? 0.94 : 0.82,
+            transition: "width 140ms ease, opacity 140ms ease, transform 40ms linear",
+            filter: paletteDrag.overCanvas
+              ? "drop-shadow(0 18px 30px rgba(0, 0, 0, 0.34))"
+              : "drop-shadow(0 10px 22px rgba(0, 0, 0, 0.22))",
+          }}
+        >
+          <NodeTemplatePreview
+            node={activeDraggedNode}
+            getDefaultNodeData={getDefaultNodeData}
+            getNodeVisual={getNodeVisual}
+          />
+        </div>
+      )}
 
       <div
         style={{
@@ -1245,6 +1307,7 @@ const nodeTemplateDraggableStyle: React.CSSProperties = {
   cursor: "grab",
   userSelect: "none",
   WebkitUserSelect: "none",
+  touchAction: "none",
 };
 
 const toolbarButtonStyle: React.CSSProperties = {

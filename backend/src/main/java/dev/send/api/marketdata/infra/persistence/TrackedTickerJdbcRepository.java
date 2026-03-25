@@ -2,6 +2,7 @@ package dev.send.api.marketdata.infra.persistence;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 
@@ -64,16 +65,18 @@ public class TrackedTickerJdbcRepository {
 
     public void insertIfAbsent(String symbol) {
         Instant now = Instant.now();
-        jdbcTemplate.update(INSERT_IF_ABSENT_SQL, symbol, now, now);
+        Timestamp timestamp = Timestamp.from(now);
+        jdbcTemplate.update(INSERT_IF_ABSENT_SQL, symbol, timestamp, timestamp);
     }
 
     public void upsert(String symbol, boolean enabled) {
         Instant now = Instant.now();
-        jdbcTemplate.update(UPSERT_SQL, symbol, enabled, now, now);
+        Timestamp timestamp = Timestamp.from(now);
+        jdbcTemplate.update(UPSERT_SQL, symbol, enabled, timestamp, timestamp);
     }
 
     public void updateEnabled(String symbol, boolean enabled) {
-        jdbcTemplate.update(UPDATE_ENABLED_SQL, enabled, Instant.now(), symbol);
+        jdbcTemplate.update(UPDATE_ENABLED_SQL, enabled, Timestamp.from(Instant.now()), symbol);
     }
 
     public void delete(String symbol) {

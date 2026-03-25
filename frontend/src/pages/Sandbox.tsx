@@ -101,6 +101,8 @@ type PaletteDragState = {
   canvasZoom: number;
 };
 
+const LIBRARY_PREVIEW_SCALE = SANDBOX_LIBRARY_NODE_WIDTH / SANDBOX_NODE_WIDTH;
+
 const NODE_CATEGORY_ORDER = [
   "market data",
   "constant",
@@ -929,8 +931,12 @@ function SandboxInner() {
   }, [currentStrategyId, edges, nodes, nodes.length, notifyError, setNodes]);
 
   const activeDraggedNode = paletteDrag ? nodePaletteByType.get(paletteDrag.nodeType) : undefined;
-  const paletteGhostWidth = paletteDrag?.overCanvas ? SANDBOX_NODE_WIDTH : SANDBOX_LIBRARY_NODE_WIDTH;
-  const paletteGhostScale = paletteDrag?.overCanvas ? paletteDrag.canvasZoom : 1;
+  const paletteGhostWidth = SANDBOX_NODE_WIDTH;
+  const paletteGhostScale = paletteDrag
+    ? paletteDrag.overCanvas
+      ? paletteDrag.canvasZoom
+      : LIBRARY_PREVIEW_SCALE
+    : 1;
 
   return (
     <div

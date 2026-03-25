@@ -100,6 +100,10 @@ export function isMathNodeType(nodeType: string): boolean {
   return (MATH_NODE_TYPES as readonly string[]).includes(nodeType);
 }
 
+function hasOwnRecordKey(record: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
 function getNodeTheme(theme: string | undefined): CategoryTheme {
   if (theme && theme in CATEGORY_THEMES) {
     return theme as CategoryTheme;
@@ -379,11 +383,13 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
             >
               {inputPorts.map((port) => {
                 const hasWire = hasIncomingEdgeForPort(edges, id, port, inputPorts.length);
-                const inlineValue = inlineInputValues[String(port.index)];
+                const inlineInputKey = String(port.index);
+                const hasInlineValue = hasOwnRecordKey(inlineInputValues, inlineInputKey);
+                const inlineValue = inlineInputValues[inlineInputKey];
 
                 return (
                   <label
-                    key={`inline-port-${port.index}`}
+                    key={`inline-port-${inlineInputKey}`}
                     style={{
                       display: "grid",
                       gridTemplateColumns: "1fr",
@@ -408,7 +414,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
                     <input
                       className="nodrag"
                       type="number"
-                      value={typeof inlineValue === "number" ? inlineValue : ""}
+                      value={hasInlineValue && typeof inlineValue === "number" ? inlineValue : ""}
                       placeholder="0"
                       onChange={(event) => setInlineInputValue(port.index, event.target.value)}
                       style={inputStyle(visual)}

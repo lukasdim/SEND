@@ -221,8 +221,11 @@ function materializeInlineMathInputs(nodes: Node[], edges: Edge[]): FrontendGrap
     const inputPorts = nodeData.inputs ?? [];
 
     for (const port of inputPorts) {
-      const inlineValue = inlineInputValues[String(port.index)];
-      if (typeof inlineValue !== "number") continue;
+      const inlineInputKey = String(port.index);
+      if (!Object.prototype.hasOwnProperty.call(inlineInputValues, inlineInputKey)) continue;
+
+      const inlineValue = inlineInputValues[inlineInputKey];
+      if (typeof inlineValue !== "number" || Number.isNaN(inlineValue)) continue;
 
       const hasIncomingEdge = edges.some((edge) => {
         if (edge.target !== node.id) return false;

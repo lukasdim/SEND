@@ -64,7 +64,7 @@ export default function PageShell({ title, eyebrow, description, children }: Pag
               SEND
             </div>
             <div style={{ fontSize: 14, color: UI_TEXT_PRIMARY, marginTop: 2 }}>
-              Strategy editor and learning platform
+              Strategy Editor and Development System
             </div>
           </div>
 

@@ -36,9 +36,6 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        VITE_SANDBOX_BACKEND_HOST: "http://localhost"
-        VITE_SANDBOX_BACKEND_PORT: "9119"
     ports:
       - "5173:80"
     depends_on:

@@ -1,7 +1,7 @@
 import { SANDBOX_STRATEGIES_API } from "../config/sandboxConfig";
 import type { CategoryTheme, JsonScalar, NodeIoCatalog, NodeRuntimeResult } from "../components/nodes/NodeTypes";
 
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = import.meta.env.VITE_API_URL?.trim() || "";
 
 type ApiErrorPayload = {
   code?: unknown;

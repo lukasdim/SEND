@@ -19,7 +19,18 @@ function resolveSandboxBackendPort() {
   return configuredPort;
 }
 
-const SANDBOX_STRATEGIES_API_BASE = `http://${resolveSandboxBackendHost()}:${resolveSandboxBackendPort()}`;
+function resolveSandboxApiBase() {
+  const host = resolveSandboxBackendHost();
+  const port = resolveSandboxBackendPort();
+
+  if (port === "-1") {
+    return host;
+  }
+
+  return `${host}:${port}`;
+}
+
+const SANDBOX_STRATEGIES_API_BASE = resolveSandboxApiBase();
 
 export const SANDBOX_STRATEGIES_API = {
   baseUrl: SANDBOX_STRATEGIES_API_BASE,

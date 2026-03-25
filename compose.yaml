@@ -26,6 +26,9 @@ services:
       SPRING_DATASOURCE_USERNAME: send_user
       SPRING_DATASOURCE_PASSWORD: change_me
       SERVER_PORT: "8080"
+      DATABASE_BOOTSTRAP_DATA_DIRECTORY: /app/data
+    volumes:
+      - ./data:/app/data:ro
     ports:
       - "9119:8080"
     depends_on:

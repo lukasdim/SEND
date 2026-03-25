@@ -10,6 +10,9 @@ spring:
     hibernate:
       ddl-auto: create-drop
 
+database-bootstrap:
+  enabled: false
+
 market-data:
   bootstrap-tracked-symbols: []
   scheduler:

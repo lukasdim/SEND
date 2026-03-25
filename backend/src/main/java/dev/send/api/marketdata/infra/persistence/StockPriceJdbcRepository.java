@@ -1,6 +1,8 @@
 package dev.send.api.marketdata.infra.persistence;
 
 import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -20,6 +22,12 @@ public class StockPriceJdbcRepository {
                 volume = EXCLUDED.volume
             """;
 
+    private static final String FIND_LATEST_TIME_SQL = """
+            SELECT MAX(time)
+            FROM stock_prices
+            WHERE symbol = ?
+            """;
+
     private final JdbcTemplate jdbcTemplate;
 
     public StockPriceJdbcRepository(JdbcTemplate jdbcTemplate) {
@@ -36,5 +44,13 @@ public class StockPriceJdbcRepository {
                 stockPrice.low(),
                 stockPrice.close(),
                 stockPrice.volume());
+    }
+
+    public Optional<Instant> findLatestTime(String symbol) {
+        return Optional.ofNullable(jdbcTemplate.queryForObject(
+                        FIND_LATEST_TIME_SQL,
+                        Timestamp.class,
+                        symbol))
+                .map(Timestamp::toInstant);
     }
 }

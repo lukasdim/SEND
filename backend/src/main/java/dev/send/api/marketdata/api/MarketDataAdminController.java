@@ -53,12 +53,14 @@ public class MarketDataAdminController {
     }
 
     @PostMapping("/prices/refresh")
-    public MarketDataRefreshResult refreshPrices(@RequestParam(name = "symbol", required = false) @Nullable String symbol) {
+    public MarketDataRefreshResult refreshPrices(
+            @RequestParam(name = "symbol", required = false) @Nullable String symbol,
+            @RequestParam(name = "length", defaultValue = "1") int length) {
         return executeRefresh(() -> {
             if (symbol == null) {
-                return marketDataRefreshService.refreshTrackedPrices();
+                return marketDataRefreshService.refreshTrackedPrices(length);
             }
-            return marketDataRefreshService.refreshPrice(symbol);
+            return marketDataRefreshService.refreshPrice(symbol, length);
         });
     }
 

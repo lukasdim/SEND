@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.mock;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -39,16 +40,14 @@ class MarketDataRefreshServiceTests {
             mock(TrackedTickerJdbcRepository.class);
 
     @Test
-    void refreshTrackedPricesNormalizesSymbolsAndUpsertsAvailableRows() {
-        PriceDataProvider priceDataProvider = symbol -> Optional.of(new DailyStockPrice(
-                symbol,
-                Instant.parse("2026-03-24T00:00:00Z"),
-                1.0,
-                2.0,
-                0.5,
-                1.5,
-                100L));
+    void refreshTrackedPricesBackfillsOnlyMissingHourlyTail() {
+        Instant currentHour = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.HOURS);
+        Instant lastStoredTime = currentHour.minus(Duration.ofHours(1));
+        PriceDataProvider priceDataProvider = (symbol, startTime, stepCount) -> List.of(
+                new DailyStockPrice(symbol, startTime, 1.0, 2.0, 0.5, 1.5, 100L));
         when(trackedTickerJdbcRepository.findEnabledSymbols()).thenReturn(List.of("AAPL", "SPY"));
+        when(stockPriceJdbcRepository.findLatestTime("AAPL")).thenReturn(Optional.of(lastStoredTime));
+        when(stockPriceJdbcRepository.findLatestTime("SPY")).thenReturn(Optional.of(lastStoredTime));
         when(stockPriceJdbcRepository.upsert(any(DailyStockPrice.class))).thenReturn(1);
 
         MarketDataRefreshService service = new MarketDataRefreshService(
@@ -59,14 +58,20 @@ class MarketDataRefreshServiceTests {
                 Optional.of(priceDataProvider),
                 Optional.empty());
 
-        MarketDataRefreshResult result = service.refreshTrackedPrices();
+        MarketDataRefreshResult result = service.refreshTrackedPrices(2);
 
         assertEquals("prices", result.dataset());
         assertEquals("tracked", result.scope());
         assertEquals(List.of("AAPL", "SPY"), result.requestedSymbols());
         assertEquals(2, result.recordsWritten());
-        verify(stockPriceJdbcRepository).upsert(argThat(price -> price != null && price.symbol().equals("AAPL")));
-        verify(stockPriceJdbcRepository).upsert(argThat(price -> price != null && price.symbol().equals("SPY")));
+        verify(stockPriceJdbcRepository)
+                .upsert(argThat(price -> price != null
+                        && price.symbol().equals("AAPL")
+                        && price.time().equals(currentHour)));
+        verify(stockPriceJdbcRepository)
+                .upsert(argThat(price -> price != null
+                        && price.symbol().equals("SPY")
+                        && price.time().equals(currentHour)));
     }
 
     @Test
@@ -112,6 +117,30 @@ class MarketDataRefreshServiceTests {
 
         assertThrows(IllegalStateException.class, service::refreshTrackedPrices);
         verifyNoInteractions(stockPriceJdbcRepository);
+    }
+
+    @Test
+    void throwsWhenProviderReturnsMissingPeriodStep() {
+        PriceDataProvider priceDataProvider = (symbol, startTime, stepCount) -> List.of(new DailyStockPrice(
+                symbol,
+                startTime.plus(Duration.ofHours(1)),
+                1.0,
+                2.0,
+                0.5,
+                1.5,
+                100L));
+
+        MarketDataRefreshService service = new MarketDataRefreshService(
+                new MarketDataProperties(),
+                stockPriceJdbcRepository,
+                stockFundamentalsRepository,
+                trackedTickerJdbcRepository,
+                Optional.of(priceDataProvider),
+                Optional.empty());
+
+        when(stockPriceJdbcRepository.findLatestTime("AAPL")).thenReturn(Optional.of(Instant.parse("2026-03-24T00:00:00Z")));
+
+        assertThrows(IllegalStateException.class, () -> service.refreshPrice("AAPL", 1));
     }
 
     private static org.mockito.ArgumentMatcher<StockFundamentalsEntity> entityMatches(

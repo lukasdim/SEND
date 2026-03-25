@@ -1,9 +1,10 @@
 package dev.send.api.marketdata.application;
 
-import java.util.Optional;
+import java.time.Instant;
+import java.util.List;
 
 import dev.send.api.marketdata.domain.DailyStockPrice;
 
 public interface PriceDataProvider {
-    Optional<DailyStockPrice> fetchDailyPrice(String symbol);
+    List<DailyStockPrice> fetchHourlyPrices(String symbol, Instant startTime, int hourCount);
 }

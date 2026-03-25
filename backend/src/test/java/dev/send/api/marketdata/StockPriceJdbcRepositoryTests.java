@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -48,5 +49,18 @@ class StockPriceJdbcRepositoryTests {
                 eq(0.5),
                 eq(1.5),
                 eq(100L));
+    }
+
+    @Test
+    void findsLatestTimeForSymbolAndPeriod() {
+        Timestamp timestamp = Timestamp.from(Instant.parse("2026-03-24T00:00:00Z"));
+        when(jdbcTemplate.queryForObject(any(String.class), eq(Timestamp.class), eq("AAPL")))
+                .thenReturn(timestamp);
+
+        StockPriceJdbcRepository repository = new StockPriceJdbcRepository(jdbcTemplate);
+
+        Optional<Instant> latestTime = repository.findLatestTime("AAPL");
+
+        assertEquals(Instant.parse("2026-03-24T00:00:00Z"), latestTime.orElseThrow());
     }
 }

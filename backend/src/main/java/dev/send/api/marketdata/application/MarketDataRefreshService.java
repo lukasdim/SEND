@@ -1,6 +1,8 @@
 package dev.send.api.marketdata.application;
 
 import java.util.ArrayList;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -51,7 +53,7 @@ public class MarketDataRefreshService {
     }
 
     public MarketDataRefreshResult refreshTrackedPrices() {
-        return refreshPrices(trackedTickerJdbcRepository.findEnabledSymbols(), "tracked");
+        return refreshPrices(trackedTickerJdbcRepository.findEnabledSymbols(), "tracked", 1);
     }
 
     public MarketDataRefreshResult refreshTrackedFundamentals() {
@@ -59,7 +61,15 @@ public class MarketDataRefreshService {
     }
 
     public MarketDataRefreshResult refreshPrice(String symbol) {
-        return refreshPrices(List.of(normalizeSymbol(symbol)), "single");
+        return refreshPrices(List.of(normalizeSymbol(symbol)), "single", 1);
+    }
+
+    public MarketDataRefreshResult refreshPrice(String symbol, int length) {
+        return refreshPrices(List.of(normalizeSymbol(symbol)), "single", length);
+    }
+
+    public MarketDataRefreshResult refreshTrackedPrices(int length) {
+        return refreshPrices(trackedTickerJdbcRepository.findEnabledSymbols(), "tracked", length);
     }
 
     public MarketDataRefreshResult refreshFundamentals(String symbol) {
@@ -85,14 +95,26 @@ public class MarketDataRefreshService {
         return trackedTickerJdbcRepository.findAll();
     }
 
-    private MarketDataRefreshResult refreshPrices(List<String> symbols, String scope) {
+    private MarketDataRefreshResult refreshPrices(List<String> symbols, String scope, int length) {
+        int normalizedLength = normalizeLength(length);
+        Duration stepDuration = Duration.ofHours(1);
         PriceDataProvider provider = priceDataProvider.orElseThrow(() ->
                 new IllegalStateException("No price data provider is configured."));
         int recordsWritten = 0;
         for (String symbol : symbols) {
-            Optional<DailyStockPrice> stockPrice = provider.fetchDailyPrice(symbol);
-            if (stockPrice.isPresent()) {
-                recordsWritten += stockPriceJdbcRepository.upsert(stockPrice.get());
+            Instant requestedEndTime = alignToHour(Instant.now());
+            Instant requestedStartTime = requestedEndTime.minus(stepDuration.multipliedBy(normalizedLength - 1L));
+            Instant fetchStartTime = resolveFetchStartTime(symbol, requestedStartTime, stepDuration);
+            if (fetchStartTime.isAfter(requestedEndTime)) {
+                continue;
+            }
+
+            int hourCount =
+                    Math.toIntExact(Duration.between(fetchStartTime, requestedEndTime).toHours()) + 1;
+            List<DailyStockPrice> stockPrices = provider.fetchHourlyPrices(symbol, fetchStartTime, hourCount);
+            ensureCompleteHourlySeries(symbol, fetchStartTime, hourCount, stepDuration, stockPrices);
+            for (DailyStockPrice stockPrice : stockPrices) {
+                recordsWritten += stockPriceJdbcRepository.upsert(stockPrice);
             }
         }
         return new MarketDataRefreshResult("prices", scope, symbols, recordsWritten);
@@ -126,6 +148,53 @@ public class MarketDataRefreshService {
     private Map<String, Double> sanitizeMetrics(Map<String, Double> rawMetrics) {
         Objects.requireNonNull(rawMetrics, "rawMetrics must not be null");
         return Map.copyOf(rawMetrics);
+    }
+
+    private Instant resolveFetchStartTime(
+            String symbol,
+            Instant requestedStartTime,
+            Duration stepDuration) {
+        Instant alignedRequestedStartTime = alignToHour(requestedStartTime);
+        return stockPriceJdbcRepository.findLatestTime(symbol)
+                .map(this::alignToHour)
+                .map(lastTime -> {
+                    Instant nextMissingTime = lastTime.plus(stepDuration);
+                    return nextMissingTime.isAfter(alignedRequestedStartTime)
+                            ? nextMissingTime
+                            : alignedRequestedStartTime;
+                })
+                .orElse(alignedRequestedStartTime);
+    }
+
+    private void ensureCompleteHourlySeries(
+            String symbol,
+            Instant startTime,
+            int hourCount,
+            Duration stepDuration,
+            List<DailyStockPrice> stockPrices) {
+        if (stockPrices.size() != hourCount) {
+            throw new IllegalStateException("Price provider returned incomplete hourly data for " + symbol + ".");
+        }
+
+        for (int index = 0; index < stockPrices.size(); index++) {
+            DailyStockPrice stockPrice = stockPrices.get(index);
+            Instant expectedTime = startTime.plus(stepDuration.multipliedBy(index));
+            if (!stockPrice.symbol().equals(symbol)
+                    || !alignToHour(stockPrice.time()).equals(expectedTime)) {
+                throw new IllegalStateException("Price provider returned non-contiguous hourly data for " + symbol + ".");
+            }
+        }
+    }
+
+    private int normalizeLength(int length) {
+        if (length <= 0) {
+            throw new IllegalArgumentException("Length must be greater than zero.");
+        }
+        return length;
+    }
+
+    private Instant alignToHour(Instant instant) {
+        return instant.truncatedTo(java.time.temporal.ChronoUnit.HOURS);
     }
 
     private List<String> normalizeSymbols(List<String> rawSymbols) {

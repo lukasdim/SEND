@@ -1,6 +1,7 @@
 package dev.send.api.marketdata;
 
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -54,10 +55,10 @@ class MarketDataAdminControllerTests {
 
     @Test
     void refreshesTrackedPricesWhenSymbolIsOmitted() throws Exception {
-        when(marketDataRefreshService.refreshTrackedPrices())
+        when(marketDataRefreshService.refreshTrackedPrices(4))
                 .thenReturn(new MarketDataRefreshResult("prices", "tracked", List.of("AAPL", "SPY"), 2));
 
-        mockMvc.perform(post("/api/admin/market-data/prices/refresh"))
+        mockMvc.perform(post("/api/admin/market-data/prices/refresh?length=4"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.dataset").value("prices"))
                 .andExpect(jsonPath("$.scope").value("tracked"))
@@ -78,8 +79,19 @@ class MarketDataAdminControllerTests {
     }
 
     @Test
+    void refreshesSinglePriceSymbolWithLengthAndPeriod() throws Exception {
+        when(marketDataRefreshService.refreshPrice("AAPL", 3))
+                .thenReturn(new MarketDataRefreshResult("prices", "single", List.of("AAPL"), 3));
+
+        mockMvc.perform(post("/api/admin/market-data/prices/refresh?symbol=AAPL&length=3"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requestedSymbols[0]").value("AAPL"))
+                .andExpect(jsonPath("$.recordsWritten").value(3));
+    }
+
+    @Test
     void returnsServiceUnavailableWhenProviderIsMissing() throws Exception {
-        when(marketDataRefreshService.refreshTrackedPrices())
+        when(marketDataRefreshService.refreshTrackedPrices(1))
                 .thenThrow(new IllegalStateException("No price data provider is configured."));
 
         mockMvc.perform(post("/api/admin/market-data/prices/refresh"))
@@ -88,7 +100,7 @@ class MarketDataAdminControllerTests {
 
     @Test
     void returnsBadRequestForInvalidSymbol() throws Exception {
-        when(marketDataRefreshService.refreshPrice(anyString()))
+        when(marketDataRefreshService.refreshPrice(anyString(), anyInt()))
                 .thenThrow(new IllegalArgumentException("Symbol must not be blank."));
 
         mockMvc.perform(post("/api/admin/market-data/prices/refresh?symbol=%20%20%20"))

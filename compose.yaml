@@ -25,8 +25,9 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://send-db:5432/send
       SPRING_DATASOURCE_USERNAME: send_user
       SPRING_DATASOURCE_PASSWORD: change_me
+      SERVER_PORT: ${SANDBOX_BACKEND_CONTAINER_PORT:-8080}
     ports:
-      - "9119:8080"
+      - "${SANDBOX_BACKEND_PORT:-9119}:${SANDBOX_BACKEND_CONTAINER_PORT:-8080}"
     depends_on:
       send-db:
         condition: service_healthy
@@ -36,8 +37,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_SANDBOX_BACKEND_HOST: "localhost"
-        VITE_SANDBOX_BACKEND_PORT: "9119"
+        VITE_SANDBOX_BACKEND_HOST: ${SANDBOX_BACKEND_HOST:-localhost}
+        VITE_SANDBOX_BACKEND_PORT: ${SANDBOX_BACKEND_PORT:-9119}
     ports:
       - "5173:80"
     depends_on:

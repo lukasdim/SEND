@@ -118,12 +118,44 @@ function isNodeIoCatalog(payload: unknown): payload is NodeIoCatalog {
       node.dataFields.every((field) => {
         if (!isRecord(field)) return false;
         const { defaultValue } = field;
+        const rawOptions = field.options;
+        const optionsValid =
+          rawOptions == null ||
+          (Array.isArray(rawOptions) && rawOptions.every((option) => typeof option === "string"));
+        const optionList =
+          Array.isArray(rawOptions) && rawOptions.every((option) => typeof option === "string")
+            ? rawOptions
+            : undefined;
+        const readableOptionsValid =
+          field.readableOptions == null ||
+          (Array.isArray(field.readableOptions) &&
+            field.readableOptions.every((option) => typeof option === "string") &&
+            (optionList === undefined || field.readableOptions.length === optionList.length));
+        const optionFilterValid =
+          field.optionFilter == null ||
+          (isRecord(field.optionFilter) &&
+            typeof field.optionFilter.field === "string" &&
+            isRecord(field.optionFilter.groups) &&
+            Object.values(field.optionFilter.groups).every((group) => {
+              if (!isRecord(group) || !Array.isArray(group.options)) return false;
+              if (!group.options.every((option) => typeof option === "string")) return false;
+              if (group.readableOptions === undefined) return true;
+              return (
+                Array.isArray(group.readableOptions) &&
+                group.readableOptions.every((option) => typeof option === "string") &&
+                group.readableOptions.length === group.options.length
+              );
+            }));
         return (
           typeof field.name === "string" &&
+          (field.label == null || typeof field.label === "string") &&
           typeof field.valueType === "string" &&
           typeof field.valueTypeClass === "string" &&
           typeof field.required === "boolean" &&
-          (defaultValue === undefined || isJsonScalar(defaultValue))
+          (defaultValue === undefined || isJsonScalar(defaultValue)) &&
+          optionsValid &&
+          readableOptionsValid &&
+          optionFilterValid
         );
       })
     );

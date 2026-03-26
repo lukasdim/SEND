@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { v4 as uuidv4 } from "uuid";
 import ReactFlow, {
   Background,
   type Connection,
@@ -22,6 +21,7 @@ import {
   isMathNodeType,
   type JsonScalar,
   type NodeData,
+  type NodeErrorState,
   type NodePaletteItem,
   type NodeRuntimeResult,
 } from "../components/nodes/NodeTypes";
@@ -101,6 +101,23 @@ type PaletteDragState = {
   canvasZoom: number;
 };
 
+type SandboxIssue = {
+  id: string;
+  severity: "error" | "warning";
+  title: string;
+  summary: string;
+  details: string[];
+  technicalDetails: string[];
+  nodeId?: string;
+  portIndex?: number;
+};
+
+type TransientBanner = {
+  title: string;
+  summary: string;
+  details?: string[];
+};
+
 const LIBRARY_PREVIEW_SCALE = SANDBOX_LIBRARY_NODE_WIDTH / SANDBOX_NODE_WIDTH;
 
 const NODE_CATEGORY_ORDER = [
@@ -142,6 +159,39 @@ function stripRuntimeResults(nodes: Node[]): Node[] {
   });
 }
 
+function clearNodeIssues(nodes: Node[]): Node[] {
+  return nodes.map((node) => {
+    if (!isRecord(node.data) || !("errorState" in node.data)) {
+      return node;
+    }
+
+    const nodeData = node.data as NodeData;
+    if (!nodeData.errorState) return node;
+    return {
+      ...node,
+      data: {
+        ...nodeData,
+        errorState: undefined,
+      },
+    };
+  });
+}
+
+function clearNodeIssueById(nodes: Node[], nodeId: string): Node[] {
+  return nodes.map((node) => {
+    if (node.id !== nodeId) return node;
+    const nodeData = node.data as NodeData;
+    if (!nodeData.errorState) return node;
+    return {
+      ...node,
+      data: {
+        ...nodeData,
+        errorState: undefined,
+      },
+    };
+  });
+}
+
 function mergeRuntimeResults(nodes: Node[], results: Record<string, NodeRuntimeResult>): Node[] {
   return nodes.map((node) => {
     const result = results[node.id];
@@ -163,18 +213,140 @@ function formatLastEdited(value: string): string {
   return date.toLocaleString();
 }
 
-function formatApiErrorMessage(error: unknown, fallbackMessage: string): string {
-  if (isApiError(error)) {
-    return error.details.length > 0
-      ? `${error.message}\n${error.details.join("\n")}`
-      : error.message;
-  }
-
+function formatFallbackErrorMessage(error: unknown, fallbackMessage: string): string {
   if (error instanceof Error && error.message.length > 0) {
     return error.message;
   }
 
+  if (isApiError(error) && error.message.length > 0) {
+    return error.message;
+  }
+
   return fallbackMessage;
+}
+
+function humanizePortName(portName: string | undefined, portIndex: number | undefined): string {
+  if (portName && portName.trim().length > 0) {
+    return portName.trim();
+  }
+  if (typeof portIndex === "number") {
+    return `input ${portIndex + 1}`;
+  }
+  return "this input";
+}
+
+function toNodeErrorState(issue: SandboxIssue): NodeErrorState {
+  return {
+    severity: issue.severity,
+    summary: issue.summary,
+    details: issue.details,
+    portIndex: issue.portIndex,
+  };
+}
+
+function applyIssuesToNodes(nodes: Node[], issues: SandboxIssue[]): Node[] {
+  const issueByNodeId = new Map<string, SandboxIssue[]>();
+  for (const issue of issues) {
+    if (!issue.nodeId) continue;
+    const existing = issueByNodeId.get(issue.nodeId);
+    if (existing) {
+      existing.push(issue);
+    } else {
+      issueByNodeId.set(issue.nodeId, [issue]);
+    }
+  }
+
+  return clearNodeIssues(nodes).map((node) => {
+    const nodeIssues = issueByNodeId.get(node.id);
+    if (!nodeIssues || nodeIssues.length === 0) return node;
+
+    const primaryIssue = nodeIssues[0];
+    const mergedDetails = [...new Set(nodeIssues.flatMap((issue) => issue.details))];
+    const nodeData = node.data as NodeData;
+    return {
+      ...node,
+      data: {
+        ...nodeData,
+        errorState: {
+          ...toNodeErrorState(primaryIssue),
+          details: mergedDetails,
+        },
+      },
+    };
+  });
+}
+
+function buildIssueFromDetail(detail: string, nodeById: Map<string, Node<NodeData>>): SandboxIssue | null {
+  const missingInputMatch = detail.match(/Missing input value for node ([A-Za-z0-9-_]+) port (\d+)/i);
+  if (missingInputMatch) {
+    const [, nodeId, portIndexText] = missingInputMatch;
+    const portIndex = Number(portIndexText);
+    const node = nodeById.get(nodeId);
+    if (!node) return null;
+    const nodeData = node.data as NodeData;
+    const port = nodeData.inputs.find((input) => input.index === portIndex);
+    const portLabel = humanizePortName(port?.name, portIndex);
+    const supportsFallback = isMathNodeType(nodeData.nodeType);
+    return {
+      id: `${nodeId}:${portIndex}:${detail}`,
+      severity: "error",
+      title: "Missing input",
+      summary: `${nodeData.displayName} needs a value for ${portLabel}.`,
+      details: supportsFallback
+        ? [`Connect a value to ${portLabel}, or enter a fallback number directly in the node.`]
+        : [`Connect a value to ${portLabel} before testing again.`],
+      technicalDetails: [detail],
+      nodeId,
+      portIndex,
+    };
+  }
+
+  const genericNodeMatch = detail.match(/node ([A-Za-z0-9-_]+)/i);
+  if (genericNodeMatch) {
+    const [, nodeId] = genericNodeMatch;
+    const node = nodeById.get(nodeId);
+    if (!node) return null;
+    const nodeData = node.data as NodeData;
+    return {
+      id: `${nodeId}:${detail}`,
+      severity: "error",
+      title: "Node needs attention",
+      summary: `${nodeData.displayName} needs attention before this strategy can run.`,
+      details: ["Review the highlighted node and update its inputs or connections, then test again."],
+      technicalDetails: [detail],
+      nodeId,
+    };
+  }
+
+  return null;
+}
+
+function normalizeStrategyIssues(error: unknown, nodes: Node[]): SandboxIssue[] {
+  if (!isApiError(error)) return [];
+
+  const nodeById = new Map(
+    nodes.map((node) => [node.id, node as Node<NodeData>])
+  );
+  const rawMessages = [...error.details];
+  if (rawMessages.length === 0 || !rawMessages.includes(error.message)) {
+    rawMessages.unshift(error.message);
+  }
+
+  const issues: SandboxIssue[] = [];
+  for (const rawMessage of rawMessages) {
+    const issue = buildIssueFromDetail(rawMessage, nodeById);
+    if (issue) {
+      issues.push(issue);
+    }
+  }
+
+  const deduped = new Map<string, SandboxIssue>();
+  for (const issue of issues) {
+    if (!deduped.has(issue.id)) {
+      deduped.set(issue.id, issue);
+    }
+  }
+  return [...deduped.values()];
 }
 
 function buildBackendGraphPayload(graph: FrontendGraphPayload): GraphPayload {
@@ -397,7 +569,32 @@ function NodeTemplatePreview({
   );
 }
 
-function ErrorNotification({ message }: { message: string }) {
+function ErrorBanner({
+  issueCount,
+  title,
+  summary,
+  details,
+  technicalDetails,
+  onJump,
+  onPrevious,
+  onNext,
+  onDismiss,
+}: {
+  issueCount?: number;
+  title: string;
+  summary: string;
+  details?: string[];
+  technicalDetails?: string[];
+  onJump?: () => void;
+  onPrevious?: () => void;
+  onNext?: () => void;
+  onDismiss?: () => void;
+}) {
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
+  const hasIssueNavigation = issueCount !== undefined && issueCount > 1 && onPrevious && onNext;
+  const hasTechnicalDetails = Boolean(technicalDetails && technicalDetails.length > 0);
+  const hasDetails = Boolean(details && details.length > 0);
+
   return (
     <div
       style={{
@@ -416,8 +613,8 @@ function ErrorNotification({ message }: { message: string }) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "42px 1fr",
-          alignItems: "center",
+          gridTemplateColumns: "42px 1fr auto",
+          alignItems: "start",
           gap: 12,
           padding: "12px 16px",
           borderRadius: 12,
@@ -448,13 +645,96 @@ function ErrorNotification({ message }: { message: string }) {
         <div
           style={{
             color: UI_TEXT_PRIMARY,
-            fontSize: 14,
-            lineHeight: 1.35,
-            whiteSpace: "pre-line",
-            wordBreak: "break-word",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            minWidth: 0,
           }}
         >
-          {message}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: UI_TEXT_SECONDARY,
+                  marginBottom: 3,
+                }}
+              >
+                {issueCount && issueCount > 1 ? `${issueCount} issues need attention` : title}
+              </div>
+              <div style={{ fontSize: 14, lineHeight: 1.35, wordBreak: "break-word" }}>{summary}</div>
+            </div>
+          </div>
+
+          {hasDetails && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {details?.map((detail) => (
+                <div key={detail} style={{ fontSize: 12, lineHeight: 1.35, color: UI_TEXT_SECONDARY }}>
+                  {detail}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {(onJump || hasIssueNavigation || hasTechnicalDetails) && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", pointerEvents: "auto" }}>
+              {onJump && (
+                <button type="button" onClick={onJump} style={bannerButtonStyle}>
+                  Jump to node
+                </button>
+              )}
+              {hasIssueNavigation && (
+                <>
+                  <button type="button" onClick={onPrevious} style={bannerButtonStyle}>
+                    Previous issue
+                  </button>
+                  <button type="button" onClick={onNext} style={bannerButtonStyle}>
+                    Next issue
+                  </button>
+                </>
+              )}
+              {hasTechnicalDetails && (
+                <button
+                  type="button"
+                  onClick={() => setShowTechnicalDetails((current) => !current)}
+                  style={bannerButtonStyle}
+                >
+                  {showTechnicalDetails ? "Hide technical details" : "Technical details"}
+                </button>
+              )}
+            </div>
+          )}
+
+          {showTechnicalDetails && hasTechnicalDetails && (
+            <pre
+              style={{
+                margin: 0,
+                padding: "10px 11px",
+                borderRadius: 8,
+                background: UI_CARD,
+                border: `1px solid ${UI_BORDER_SUBTLE}`,
+                color: UI_TEXT_SECONDARY,
+                fontSize: 11,
+                lineHeight: 1.35,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+              }}
+            >
+              {technicalDetails?.join("\n") ?? ""}
+            </pre>
+          )}
+        </div>
+
+        <div style={{ pointerEvents: "auto" }}>
+          {onDismiss && (
+            <button type="button" onClick={onDismiss} style={bannerDismissButtonStyle}>
+              Dismiss
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -462,10 +742,12 @@ function ErrorNotification({ message }: { message: string }) {
 }
 
 function SandboxInner() {
-  const { fitView, getZoom, screenToFlowPosition } = useReactFlow();
+  const { fitView, getZoom, screenToFlowPosition, setCenter } = useReactFlow();
   const [nodeRegistry, setNodeRegistry] = useState(() => createEmptyNodeRegistry());
   const [isNodeCatalogLoading, setIsNodeCatalogLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [activeIssues, setActiveIssues] = useState<SandboxIssue[]>([]);
+  const [focusedIssueIndex, setFocusedIssueIndex] = useState(0);
+  const [transientBanner, setTransientBanner] = useState<TransientBanner | null>(null);
   const [paletteDrag, setPaletteDrag] = useState<PaletteDragState | null>(null);
   const [strategies, setStrategies] = useState<StrategySummary[]>([]);
   const [isStrategiesLoading, setIsStrategiesLoading] = useState(false);
@@ -523,17 +805,34 @@ function SandboxInner() {
     [nodePalette]
   );
 
-  const notifyError = useCallback((message: string) => {
+  const initialNodes: Node[] = useMemo(() => [], []);
+  const initialEdges: Edge[] = useMemo(() => [], []);
+
+  const [nodes, setNodes] = useNodesState(initialNodes);
+  const [edges, setEdges] = useEdgesState(initialEdges);
+
+  const dismissTransientBanner = useCallback(() => {
     if (timeoutRef.current !== null) {
       window.clearTimeout(timeoutRef.current);
-    }
-
-    setErrorMessage(message);
-    timeoutRef.current = window.setTimeout(() => {
-      setErrorMessage("");
       timeoutRef.current = null;
-    }, SANDBOX_NOTIFICATION_TIMEOUT_MS);
+    }
+    setTransientBanner(null);
   }, []);
+
+  const notifyTransientBanner = useCallback((title: string, summary: string, details?: string[]) => {
+    dismissTransientBanner();
+
+    setTransientBanner({ title, summary, details });
+    timeoutRef.current = window.setTimeout(() => {
+      dismissTransientBanner();
+    }, SANDBOX_NOTIFICATION_TIMEOUT_MS);
+  }, [dismissTransientBanner]);
+
+  const dismissIssues = useCallback(() => {
+    setActiveIssues([]);
+    setFocusedIssueIndex(0);
+    setNodes((currentNodes) => clearNodeIssues(currentNodes));
+  }, [setNodes]);
 
   useEffect(() => {
     return () => {
@@ -542,6 +841,37 @@ function SandboxInner() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    setActiveIssues((currentIssues) => {
+      if (currentIssues.length === 0) return currentIssues;
+      const issueKeys = new Set(
+        nodes.flatMap((node) => {
+          const nodeData = node.data as NodeData;
+          if (!nodeData.errorState) return [];
+          return [`${node.id}:${nodeData.errorState.summary}`];
+        })
+      );
+
+      const nextIssues = currentIssues.filter((issue) => {
+        if (!issue.nodeId) return true;
+        return issueKeys.has(`${issue.nodeId}:${issue.summary}`);
+      });
+
+      return nextIssues.length === currentIssues.length ? currentIssues : nextIssues;
+    });
+  }, [nodes]);
+
+  useEffect(() => {
+    if (activeIssues.length === 0 && focusedIssueIndex !== 0) {
+      setFocusedIssueIndex(0);
+      return;
+    }
+
+    if (focusedIssueIndex >= activeIssues.length && activeIssues.length > 0) {
+      setFocusedIssueIndex(activeIssues.length - 1);
+    }
+  }, [activeIssues.length, focusedIssueIndex]);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -553,7 +883,11 @@ function SandboxInner() {
         setNodeRegistry(createNodeRegistry(catalog));
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        notifyError("Could not load node catalog from backend.");
+        notifyTransientBanner(
+          "Could not load node catalog",
+          "The node library could not be loaded from the backend.",
+          ["Refresh the page or verify the backend is running."]
+        );
       } finally {
         setIsNodeCatalogLoading(false);
       }
@@ -561,17 +895,19 @@ function SandboxInner() {
 
     void loadNodeCatalog();
     return () => abortController.abort();
-  }, [notifyError]);
-
-  const initialNodes: Node[] = useMemo(() => [], []);
-  const initialEdges: Edge[] = useMemo(() => [], []);
-
-  const [nodes, setNodes] = useNodesState(initialNodes);
-  const [edges, setEdges] = useEdgesState(initialEdges);
+  }, [notifyTransientBanner]);
 
   const clearRuntimeResults = useCallback(() => {
     setNodes((currentNodes) => stripRuntimeResults(currentNodes));
   }, [setNodes]);
+
+  const clearIssueForNode = useCallback(
+    (nodeId: string) => {
+      setNodes((currentNodes) => clearNodeIssueById(currentNodes, nodeId));
+      setActiveIssues((currentIssues) => currentIssues.filter((issue) => issue.nodeId !== nodeId));
+    },
+    [setNodes]
+  );
 
   const onNodesChange = useCallback(
     (changes: Parameters<typeof applyNodeChanges>[0]) => {
@@ -591,6 +927,54 @@ function SandboxInner() {
   const graphDatabase = useMemo(() => {
     return buildBackendGraphPayload({ nodes, edges });
   }, [edges, nodes]);
+
+  const focusedIssue = activeIssues[focusedIssueIndex];
+  const currentBanner =
+    activeIssues.length > 0
+      ? focusedIssue
+        ? {
+            issueCount: activeIssues.length,
+            title: focusedIssue.title,
+            summary: focusedIssue.summary,
+            details: focusedIssue.details,
+            technicalDetails: focusedIssue.technicalDetails,
+            onDismiss: dismissIssues,
+          }
+        : null
+      : transientBanner
+        ? {
+            title: transientBanner.title,
+            summary: transientBanner.summary,
+            details: transientBanner.details,
+            onDismiss: dismissTransientBanner,
+          }
+        : null;
+
+  const focusIssue = useCallback(
+    (issue: SandboxIssue | undefined) => {
+      if (!issue?.nodeId) return;
+      const node = nodes.find((candidate) => candidate.id === issue.nodeId);
+      if (!node) return;
+
+      setNodes((currentNodes) =>
+        currentNodes.map((candidate) => ({
+          ...candidate,
+          selected: candidate.id === issue.nodeId,
+        }))
+      );
+      void setCenter(node.position.x, node.position.y, { zoom: 1.15, duration: 280 });
+    },
+    [nodes, setCenter, setNodes]
+  );
+
+  const focusIssueByIndex = useCallback(
+    (index: number) => {
+      const normalizedIndex = ((index % activeIssues.length) + activeIssues.length) % activeIssues.length;
+      setFocusedIssueIndex(normalizedIndex);
+      focusIssue(activeIssues[normalizedIndex]);
+    },
+    [activeIssues, focusIssue]
+  );
 
   const fetchStrategies = useCallback(
     async (signal?: AbortSignal) => {
@@ -621,12 +1005,16 @@ function SandboxInner() {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setStrategies([]);
         setStrategiesError("Could not load strategies.");
-        notifyError("Could not load previous strategies. Please try again.");
+        notifyTransientBanner(
+          "Could not load strategies",
+          "Previous strategies are unavailable right now.",
+          ["Use Retry, or check the backend connection and try again."]
+        );
       } finally {
         setIsStrategiesLoading(false);
       }
     },
-    [notifyError]
+    [notifyTransientBanner]
   );
 
   useEffect(() => {
@@ -722,46 +1110,64 @@ function SandboxInner() {
 
         setNodes(loadedNodes);
         setEdges(loadedEdges);
+        setActiveIssues([]);
+        setFocusedIssueIndex(0);
         setCurrentStrategyId(typeof payload.id === "string" ? payload.id : strategy.id);
         setCurrentStrategyName(strategy.name);
         setPaletteDrag(null);
+        dismissTransientBanner();
         window.requestAnimationFrame(() => {
           void fitView({ padding: 0.2, duration: 280 });
         });
       } catch {
-        notifyError("Could not load this strategy graph. Please try another strategy.");
+        notifyTransientBanner(
+          "Could not load strategy",
+          "This strategy graph could not be opened.",
+          ["Try another strategy or retry after the backend is available."]
+        );
       } finally {
         setIsStrategyLoading(false);
       }
     },
-    [fitView, getDefaultNodeData, isSupportedNodeType, notifyError, setEdges, setNodes]
+    [dismissTransientBanner, fitView, getDefaultNodeData, isSupportedNodeType, notifyTransientBanner, setEdges, setNodes]
   );
 
   const onConnect = useCallback(
     (params: Edge | Connection) => {
       clearRuntimeResults();
+      if (typeof params.target === "string") {
+        clearIssueForNode(params.target);
+      }
       setEdges((currentEdges) =>
         addEdge({ ...params, type: "smoothstep", animated: true }, currentEdges)
       );
     },
-    [clearRuntimeResults, setEdges]
+    [clearIssueForNode, clearRuntimeResults, setEdges]
   );
 
   const tryCreateNode = useCallback(
     (type: string, position: { x: number; y: number }) => {
       if (!isSupportedNodeType(type)) {
-        notifyError("Unsupported node type dropped. Please drag a valid node from the sidebar.");
+        notifyTransientBanner(
+          "Unsupported node",
+          "That node type is not available in this workspace.",
+          ["Drag a node from the sidebar and try again."]
+        );
         return false;
       }
 
       const nodeData = getDefaultNodeData(type);
       if (!nodeData) {
-        notifyError("Node configuration is missing for this type. Please refresh and try again.");
+        notifyTransientBanner(
+          "Node configuration missing",
+          "This node could not be created because its configuration is unavailable.",
+          ["Refresh the page and try again."]
+        );
         return false;
       }
 
       const newNode: Node = {
-        id: `n-${uuidv4()}`,
+        id: `n-${crypto.randomUUID()}`,
         type,
         position,
         data: nodeData,
@@ -775,7 +1181,7 @@ function SandboxInner() {
       }
       return true;
     },
-    [getDefaultNodeData, isSupportedNodeType, nodes.length, notifyError, setNodes]
+    [getDefaultNodeData, isSupportedNodeType, nodes.length, notifyTransientBanner, setNodes]
   );
 
   const resolveCanvasDragState = useCallback(
@@ -862,19 +1268,25 @@ function SandboxInner() {
     setCurrentStrategyId(null);
     setCurrentStrategyName(SANDBOX_DEFAULT_UNTITLED_STRATEGY_NAME);
     setPaletteDrag(null);
-    clearRuntimeResults();
-  }, [clearRuntimeResults]);
+    setActiveIssues([]);
+    setFocusedIssueIndex(0);
+    dismissTransientBanner();
+    setNodes((currentNodes) => clearNodeIssues(stripRuntimeResults(currentNodes)));
+  }, [dismissTransientBanner, setNodes]);
 
   const onSaveStrategy = useCallback(async () => {
     if (nodes.length === 0) {
-      notifyError("Add at least one node before saving a strategy.");
+      notifyTransientBanner(
+        "Nothing to save",
+        "Add at least one node before saving this strategy."
+      );
       return;
     }
 
     setIsStrategySaving(true);
     try {
       const strategyName = currentStrategyName ?? SANDBOX_DEFAULT_UNTITLED_STRATEGY_NAME;
-      const strategyId = currentStrategyId ?? `s-${uuidv4()}`;
+      const strategyId = currentStrategyId ?? `s-${crypto.randomUUID()}`;
       const materializedGraph = materializeInlineMathInputs(nodes, edges);
       const payloadGraph = buildBackendGraphPayload(materializedGraph);
 
@@ -897,20 +1309,30 @@ function SandboxInner() {
       setCurrentStrategyId(strategyId);
       setCurrentStrategyName(strategyName);
     } catch {
-      notifyError("Could not save strategy. Please try again.");
+      notifyTransientBanner(
+        "Could not save strategy",
+        "The strategy could not be saved right now.",
+        ["Try again after the backend is available."]
+      );
     } finally {
       setIsStrategySaving(false);
     }
-  }, [currentStrategyId, currentStrategyName, edges, nodes, nodes.length, notifyError]);
+  }, [currentStrategyId, currentStrategyName, edges, nodes, nodes.length, notifyTransientBanner]);
 
   const onTestStrategy = useCallback(async () => {
     if (nodes.length === 0) {
-      notifyError("Add at least one node before testing a strategy.");
+      notifyTransientBanner(
+        "Nothing to test",
+        "Add at least one node before testing this strategy."
+      );
       return;
     }
 
     setIsStrategyTesting(true);
-    setNodes((currentNodes) => stripRuntimeResults(currentNodes));
+    dismissTransientBanner();
+    setActiveIssues([]);
+    setFocusedIssueIndex(0);
+    setNodes((currentNodes) => clearNodeIssues(stripRuntimeResults(currentNodes)));
 
     try {
       const materializedGraph = materializeInlineMathInputs(nodes, edges);
@@ -924,14 +1346,37 @@ function SandboxInner() {
 
       const results = await testStrategy(payload);
       setNodes((currentNodes) => mergeRuntimeResults(stripRuntimeResults(currentNodes), results));
+      setActiveIssues([]);
+      setFocusedIssueIndex(0);
     } catch (error) {
-      notifyError(
-        formatApiErrorMessage(error, "Could not test this strategy. Please try again.")
-      );
+      const issues = normalizeStrategyIssues(error, nodes);
+      if (issues.length > 0) {
+        setActiveIssues(issues);
+        setFocusedIssueIndex(0);
+        setNodes((currentNodes) => applyIssuesToNodes(currentNodes, issues));
+        window.requestAnimationFrame(() => {
+          focusIssue(issues[0]);
+        });
+      } else {
+        notifyTransientBanner(
+          "Could not test strategy",
+          formatFallbackErrorMessage(error, "The strategy test failed. Review the graph and try again."),
+          isApiError(error) ? error.details : undefined
+        );
+      }
     } finally {
       setIsStrategyTesting(false);
     }
-  }, [currentStrategyId, edges, nodes, nodes.length, notifyError, setNodes]);
+  }, [
+    currentStrategyId,
+    dismissTransientBanner,
+    edges,
+    focusIssue,
+    nodes,
+    nodes.length,
+    notifyTransientBanner,
+    setNodes,
+  ]);
 
   const activeDraggedNode = paletteDrag ? nodePaletteByType.get(paletteDrag.nodeType) : undefined;
   const paletteGhostWidth = SANDBOX_NODE_WIDTH;
@@ -1042,7 +1487,19 @@ function SandboxInner() {
         }
       `}</style>
 
-      {errorMessage && <ErrorNotification message={errorMessage} />}
+      {currentBanner && (
+        <ErrorBanner
+          issueCount={"issueCount" in currentBanner ? currentBanner.issueCount : undefined}
+          title={currentBanner.title}
+          summary={currentBanner.summary}
+          details={currentBanner.details}
+          technicalDetails={"technicalDetails" in currentBanner ? currentBanner.technicalDetails : undefined}
+          onJump={focusedIssue?.nodeId ? () => focusIssue(focusedIssue) : undefined}
+          onPrevious={activeIssues.length > 1 ? () => focusIssueByIndex(focusedIssueIndex - 1) : undefined}
+          onNext={activeIssues.length > 1 ? () => focusIssueByIndex(focusedIssueIndex + 1) : undefined}
+          onDismiss={currentBanner.onDismiss}
+        />
+      )}
 
       <div
         className="node-library-panel"
@@ -1338,6 +1795,23 @@ const strategyCardButtonStyle: React.CSSProperties = {
   borderRadius: 8,
   textAlign: "left",
   background: UI_CARD,
+};
+
+const bannerButtonStyle: React.CSSProperties = {
+  padding: "6px 10px",
+  borderRadius: 8,
+  border: `1px solid ${UI_BORDER_SUBTLE}`,
+  background: UI_CARD,
+  color: UI_TEXT_PRIMARY,
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: "pointer",
+};
+
+const bannerDismissButtonStyle: React.CSSProperties = {
+  ...bannerButtonStyle,
+  minWidth: 78,
+  textAlign: "center",
 };
 
 function previewInputStyle(borderColor: string): React.CSSProperties {

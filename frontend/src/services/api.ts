@@ -17,6 +17,81 @@ export type ApiError = {
 
 export type StrategyTestResults = Record<string, NodeRuntimeResult>;
 
+export type StrategySimulationConfig = {
+  startDate: string;
+  endDate: string;
+  initialCash: number;
+  includeTrace: true;
+};
+
+export type StrategySimulationTradeEvent = {
+  nodeId: string;
+  action: string;
+  ticker: string;
+  sizeMode: string;
+  requestedAmount: number;
+  filledShares: number;
+  fillPrice: number;
+  cashBefore: number;
+  cashAfter: number;
+  realizedPnl: number;
+};
+
+export type StrategySimulationBalanceSnapshot = {
+  cash: number;
+  marketValue: number;
+  equity: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+};
+
+export type StrategySimulationPosition = {
+  ticker: string;
+  quantity: number;
+  averageCost: number;
+  marketPrice?: number | null;
+  marketValue: number;
+  unrealizedPnl: number;
+};
+
+export type StrategySimulationNodeChange = {
+  nodeId: string;
+  outputs: NodeRuntimeResult;
+};
+
+export type StrategySimulationTraceDay = {
+  date: string;
+  warnings: string[];
+  errors: string[];
+  trades: StrategySimulationTradeEvent[];
+  balanceSnapshot: StrategySimulationBalanceSnapshot;
+  nodeChanges: StrategySimulationNodeChange[];
+};
+
+export type StrategySimulationSummary = {
+  startDate: string;
+  endDate: string;
+  executedDays: number;
+  initialCash: number;
+  finalCash: number;
+  marketValue: number;
+  finalEquity: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  tradeCount: number;
+};
+
+export type StrategySimulationResult = {
+  summary: StrategySimulationSummary;
+  portfolio: {
+    cash: number;
+    positions: StrategySimulationPosition[];
+  };
+  finalNodeValues: Record<string, NodeRuntimeResult>;
+  trace: StrategySimulationTraceDay[];
+  warnings: string[];
+};
+
 export async function login(email: string, password: string) {
   const res = await fetch(`${API_URL}/auth/login`, {
     method: "POST",
@@ -62,6 +137,28 @@ export async function testStrategy(
   const json = (await response.json()) as unknown;
   if (!isStrategyTestResults(json)) {
     throw new Error("Malformed strategy test response.");
+  }
+  return json;
+}
+
+export async function simulateStrategy(
+  payload: unknown,
+  signal?: AbortSignal
+): Promise<StrategySimulationResult> {
+  const response = await fetch(SANDBOX_STRATEGIES_API.simulateStrategyUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+
+  const json = (await response.json()) as unknown;
+  if (!isStrategySimulationResult(json)) {
+    throw new Error("Malformed strategy simulation response.");
   }
   return json;
 }
@@ -169,6 +266,124 @@ function isStrategyTestResults(payload: unknown): payload is StrategyTestResults
     if (!isRecord(nodeResult)) return false;
     return Object.values(nodeResult).every((value) => isJsonScalar(value));
   });
+}
+
+function isStrategySimulationResult(payload: unknown): payload is StrategySimulationResult {
+  if (!isRecord(payload)) return false;
+
+  return (
+    isStrategySimulationSummary(payload.summary) &&
+    isStrategySimulationPortfolio(payload.portfolio) &&
+    isRuntimeResultRecord(payload.finalNodeValues) &&
+    Array.isArray(payload.trace) &&
+    payload.trace.every(isStrategySimulationTraceDay) &&
+    Array.isArray(payload.warnings) &&
+    payload.warnings.every((warning) => typeof warning === "string")
+  );
+}
+
+function isStrategySimulationSummary(value: unknown): value is StrategySimulationSummary {
+  return (
+    isRecord(value) &&
+    typeof value.startDate === "string" &&
+    typeof value.endDate === "string" &&
+    typeof value.executedDays === "number" &&
+    typeof value.initialCash === "number" &&
+    typeof value.finalCash === "number" &&
+    typeof value.marketValue === "number" &&
+    typeof value.finalEquity === "number" &&
+    typeof value.realizedPnl === "number" &&
+    typeof value.unrealizedPnl === "number" &&
+    typeof value.tradeCount === "number"
+  );
+}
+
+function isStrategySimulationPortfolio(
+  value: unknown
+): value is StrategySimulationResult["portfolio"] {
+  return (
+    isRecord(value) &&
+    typeof value.cash === "number" &&
+    Array.isArray(value.positions) &&
+    value.positions.every(isStrategySimulationPosition)
+  );
+}
+
+function isStrategySimulationPosition(value: unknown): value is StrategySimulationPosition {
+  return (
+    isRecord(value) &&
+    typeof value.ticker === "string" &&
+    typeof value.quantity === "number" &&
+    typeof value.averageCost === "number" &&
+    typeof value.marketValue === "number" &&
+    typeof value.unrealizedPnl === "number" &&
+    (value.marketPrice === undefined ||
+      value.marketPrice === null ||
+      typeof value.marketPrice === "number")
+  );
+}
+
+function isStrategySimulationTraceDay(value: unknown): value is StrategySimulationTraceDay {
+  return (
+    isRecord(value) &&
+    typeof value.date === "string" &&
+    Array.isArray(value.warnings) &&
+    value.warnings.every((warning) => typeof warning === "string") &&
+    Array.isArray(value.errors) &&
+    value.errors.every((error) => typeof error === "string") &&
+    Array.isArray(value.trades) &&
+    value.trades.every(isStrategySimulationTradeEvent) &&
+    isStrategySimulationBalanceSnapshot(value.balanceSnapshot) &&
+    Array.isArray(value.nodeChanges) &&
+    value.nodeChanges.every(isStrategySimulationNodeChange)
+  );
+}
+
+function isStrategySimulationTradeEvent(value: unknown): value is StrategySimulationTradeEvent {
+  return (
+    isRecord(value) &&
+    typeof value.nodeId === "string" &&
+    typeof value.action === "string" &&
+    typeof value.ticker === "string" &&
+    typeof value.sizeMode === "string" &&
+    typeof value.requestedAmount === "number" &&
+    typeof value.filledShares === "number" &&
+    typeof value.fillPrice === "number" &&
+    typeof value.cashBefore === "number" &&
+    typeof value.cashAfter === "number" &&
+    typeof value.realizedPnl === "number"
+  );
+}
+
+function isStrategySimulationBalanceSnapshot(
+  value: unknown
+): value is StrategySimulationBalanceSnapshot {
+  return (
+    isRecord(value) &&
+    typeof value.cash === "number" &&
+    typeof value.marketValue === "number" &&
+    typeof value.equity === "number" &&
+    typeof value.realizedPnl === "number" &&
+    typeof value.unrealizedPnl === "number"
+  );
+}
+
+function isStrategySimulationNodeChange(value: unknown): value is StrategySimulationNodeChange {
+  return (
+    isRecord(value) &&
+    typeof value.nodeId === "string" &&
+    isRuntimeResult(value.outputs)
+  );
+}
+
+function isRuntimeResultRecord(value: unknown): value is Record<string, NodeRuntimeResult> {
+  if (!isRecord(value)) return false;
+  return Object.values(value).every(isRuntimeResult);
+}
+
+function isRuntimeResult(value: unknown): value is NodeRuntimeResult {
+  if (!isRecord(value)) return false;
+  return Object.values(value).every((entry) => isJsonScalar(entry));
 }
 
 function isJsonScalar(value: unknown): value is JsonScalar {

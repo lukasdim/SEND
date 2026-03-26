@@ -12,6 +12,10 @@ import {
 export type JsonScalar = string | number | boolean | null;
 export type NodeRuntimeResult = Record<string, JsonScalar>;
 export type NodeIssueSeverity = "error" | "warning";
+export type NodeRuntimeResultMeta = {
+  label?: string;
+  glow?: boolean;
+};
 
 export type NodeErrorState = {
   severity: NodeIssueSeverity;
@@ -75,7 +79,9 @@ export type NodeData = {
   fieldValues: Record<string, JsonScalar>;
   inlineInputValues?: Record<string, number>;
   runtimeResult?: NodeRuntimeResult;
+  runtimeResultMeta?: NodeRuntimeResultMeta;
   errorState?: NodeErrorState;
+  readOnly?: boolean;
 };
 
 export type NodePaletteItem = {
@@ -245,14 +251,19 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
   const inlineInputValues = data.inlineInputValues ?? {};
   const runtimeResult = data.runtimeResult;
   const hasRuntimeResult = runtimeResult && Object.keys(runtimeResult).length > 0;
+  const runtimeResultMeta = data.runtimeResultMeta;
   const isMathNode = isMathNodeType(data.nodeType);
   const errorState = data.errorState;
   const hasErrorState = Boolean(errorState);
   const issueColor = errorState?.severity === "warning" ? "#E8A33B" : "#E24B4A";
+  const isReadOnly = data.readOnly === true;
+  const shouldGlowRuntimeResult = runtimeResultMeta?.glow ?? hasRuntimeResult;
+  const runtimeResultLabel = runtimeResultMeta?.label ?? "Updated";
 
   const visual = getNodeVisualForTheme(data.theme);
 
   const setFieldValue = (key: string, value: JsonScalar) => {
+    if (isReadOnly) return;
     setNodes((nodes) =>
       nodes.map((node) => {
         if (node.id !== id) return node;
@@ -266,6 +277,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
               [key]: value,
             },
             runtimeResult: undefined,
+            runtimeResultMeta: undefined,
             errorState: undefined,
           },
         };
@@ -274,6 +286,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
   };
 
   const setInlineInputValue = (portIndex: number, rawValue: string) => {
+    if (isReadOnly) return;
     setNodes((nodes) =>
       nodes.map((node) => {
         if (node.id !== id) return node;
@@ -294,6 +307,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
             ...nodeData,
             inlineInputValues: nextInlineInputValues,
             runtimeResult: undefined,
+            runtimeResultMeta: undefined,
             errorState: undefined,
           },
         };
@@ -344,11 +358,12 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
             ...nodeData,
             fieldValues: normalizedFieldValues,
             runtimeResult: undefined,
+            runtimeResultMeta: undefined,
           },
         };
       })
     );
-  }, [id, normalizedFieldValues, setNodes]);
+  }, [id, isReadOnly, normalizedFieldValues, setNodes]);
 
   return (
     <div
@@ -370,10 +385,12 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
           zIndex: 1,
           minWidth: 160,
           boxShadow: hasRuntimeResult
-            ? `0 0 0 1px ${visual.border}, 0 0 18px ${visual.border}55, 0 12px 28px rgba(0, 0, 0, 0.34)`
+            ? shouldGlowRuntimeResult
+              ? `0 0 0 1px ${visual.border}, 0 0 18px ${visual.border}55, 0 12px 28px rgba(0, 0, 0, 0.34)`
+              : "0 10px 24px rgba(0, 0, 0, 0.18)"
             : hasErrorState
               ? `0 0 0 1px ${issueColor}, 0 0 18px ${issueColor}35, 0 12px 28px rgba(0, 0, 0, 0.3)`
-            : "0 10px 24px rgba(0, 0, 0, 0.18)",
+              : "0 10px 24px rgba(0, 0, 0, 0.18)",
         }}
       >
         {inputPorts.map((port, idx) => (
@@ -518,6 +535,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
                           type="checkbox"
                           checked={Boolean(value)}
                           onChange={(event) => setFieldValue(field.name, event.target.checked)}
+                          disabled={isReadOnly}
                           style={{
                             width: 14,
                             height: 14,
@@ -538,6 +556,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
                             : getFirstSelectableValue(field, effectiveFieldValues) ?? ""
                         }
                         onChange={(event) => setFieldValue(field.name, event.target.value)}
+                        disabled={isReadOnly}
                         style={inputStyle(visual)}
                       >
                         {selectableOptions.options.map((option, index) => (
@@ -565,6 +584,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
                           }
                           setFieldValue(field.name, event.target.value);
                         }}
+                        disabled={isReadOnly}
                         style={inputStyle(visual)}
                       />
                     )}
@@ -620,6 +640,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
                       value={hasInlineValue && typeof inlineValue === "number" ? inlineValue : ""}
                       placeholder="0"
                       onChange={(event) => setInlineInputValue(port.index, event.target.value)}
+                      disabled={isReadOnly}
                       style={inputStyle(visual)}
                     />
                   </label>
@@ -699,7 +720,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
                 textTransform: "uppercase",
               }}
             >
-              Updated
+              {runtimeResultLabel}
             </div>
           </div>
           <pre

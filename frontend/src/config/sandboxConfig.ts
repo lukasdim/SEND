@@ -12,4 +12,5 @@ export const SANDBOX_STRATEGIES_API = {
     `${SANDBOX_STRATEGIES_API_BASE}/api/strategies/${encodeURIComponent(strategyId)}`,
   nodeIoUrl: `${SANDBOX_STRATEGIES_API_BASE}/api/strategies/node-io`,
   testStrategyUrl: `${SANDBOX_STRATEGIES_API_BASE}/api/strategies/test`,
+  simulateStrategyUrl: `${SANDBOX_STRATEGIES_API_BASE}/api/strategies/simulate`,
 };

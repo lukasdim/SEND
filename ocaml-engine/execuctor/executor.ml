@@ -1,10 +1,13 @@
 type input = (int * Node.value) list
 type output = (int * Node.value) list
 
-type run_context = {
-  node : Node.t;
-  node_spec : Node.node_spec;
-  inputs : input;
+type trade_result = {
+  executed : bool;
+  filled_shares : float;
+  fill_price : float option;
+  cash_before : float;
+  cash_after : float;
+  realized_pnl : float;
 }
 
 type run_error =
@@ -20,6 +23,32 @@ type run_error =
       actual : Node.value;
     }
   | Message of string
+
+type run_context = {
+  node : Node.t;
+  node_spec : Node.node_spec;
+  inputs : input;
+  simulation : simulation_services option;
+}
+
+and simulation_services = {
+  current_date : string;
+  resolve_effective_date : run_context -> explicit_field_name:string -> (string, run_error) result;
+  lookup_price_value : ticker:string -> field:string -> date:string -> float option;
+  lookup_company_value : ticker:string -> field:string -> Node.value option;
+  lookup_fundamentals_value : ticker:string -> field:string -> report_date:string -> float option;
+  lookup_financial_statement_value :
+    ticker:string -> source_dataset:string -> field:string -> report_date:string -> Node.value option;
+  execute_trade :
+    node:Node.t ->
+    action:string ->
+    ticker:string ->
+    size_mode:string ->
+    requested_amount:float ->
+    price_field:string ->
+    (trade_result, run_error) result;
+  record_warning : node:Node.t -> string -> unit;
+}
 
 type t = {
   key : string;
@@ -136,6 +165,16 @@ let expect_string_field context field_name =
            ^ field_name
            ^ "` expected string but got "
            ^ Node.value_label actual))
+  | Error _ as error -> error
+
+let require_simulation context =
+  match context.simulation with
+  | Some simulation -> Ok simulation
+  | None -> Error (Message "This node requires simulation runtime context.")
+
+let resolve_effective_date context ~explicit_field_name =
+  match require_simulation context with
+  | Ok simulation -> simulation.resolve_effective_date context ~explicit_field_name
   | Error _ as error -> error
 
 let single_output index value =

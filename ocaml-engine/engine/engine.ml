@@ -78,7 +78,7 @@ let write_outputs graph node outputs =
   in
   loop outputs
 
-let execute_node graph registry node =
+let execute_node ~simulation graph registry node =
   match find_node_spec_or_error graph node with
   | Error _ as error -> error
   | Ok spec -> (
@@ -96,7 +96,7 @@ let execute_node graph registry node =
           match collect_inputs graph node spec with
           | Error _ as error -> error
           | Ok inputs -> (
-              match executor.Executor.run { node; node_spec = spec; inputs } with
+              match executor.Executor.run { node; node_spec = spec; inputs; simulation } with
               | Error error ->
                   Error
                     [
@@ -112,7 +112,7 @@ let execute_node graph registry node =
                   | [] -> write_outputs graph node outputs
                   | errors -> Error errors)))
 
-let execute ~graph ~registry =
+let execute ~simulation ~graph ~registry =
   match Graph.validate graph with
   | Error errors -> Error [ Engine_error.Graph_validation_failed errors ]
   | Ok () -> (
@@ -122,7 +122,7 @@ let execute ~graph ~registry =
           let rec loop = function
             | [] -> Ok graph
             | node :: remaining -> (
-                match execute_node graph registry node with
+                match execute_node ~simulation graph registry node with
                 | Ok _ -> loop remaining
                 | Error _ as error -> error)
           in

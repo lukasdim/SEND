@@ -203,6 +203,28 @@
       }
     },
     {
+      "name": "dateBindingMode",
+      "valueType": "StrVal",
+      "required": true,
+      "defaultValue": "explicit_date",
+      "options": [
+        "simulation_day",
+        "simulation_day_offset",
+        "explicit_date"
+      ],
+      "readableOptions": [
+        "Simulation Day",
+        "Simulation Day Offset",
+        "Set Date"
+      ]
+    },
+    {
+      "name": "dayOffset",
+      "valueType": "NumVal",
+      "required": false,
+      "defaultValue": 0
+    },
+    {
       "name": "reportDate",
       "valueType": "StrVal",
       "required": true,

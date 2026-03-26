@@ -112,7 +112,7 @@ let test_execute_graph () =
         ]
       ()
   in
-  let executed_graph = Engine.execute ~graph ~registry:primitive_registry |> expect_ok in
+  let executed_graph = Engine.execute ~simulation:None ~graph ~registry:primitive_registry |> expect_ok in
   let sum_port = Node.make_port_ref ~node_id:(node_id "c") ~port_index:0 in
   assert_true
     (Graph.port_value executed_graph sum_port = Some (Node.Number_value 5.0))
@@ -155,7 +155,7 @@ let test_if_graph () =
         ]
       ()
   in
-  let executed_graph = Engine.execute ~graph ~registry:primitive_registry |> expect_ok in
+  let executed_graph = Engine.execute ~simulation:None ~graph ~registry:primitive_registry |> expect_ok in
   let result_port = Node.make_port_ref ~node_id:(node_id "pick") ~port_index:0 in
   assert_true
     (Graph.port_value executed_graph result_port = Some (Node.Number_value 8.0))
@@ -169,7 +169,7 @@ let test_const_default_fallback () =
       ~edges:[]
       ()
   in
-  let executed_graph = Engine.execute ~graph ~registry:primitive_registry |> expect_ok in
+  let executed_graph = Engine.execute ~simulation:None ~graph ~registry:primitive_registry |> expect_ok in
   let output_port = Node.make_port_ref ~node_id:(node_id "a") ~port_index:0 in
   assert_true
     (Graph.port_value executed_graph output_port = Some (Node.Number_value 0.0))
@@ -208,7 +208,7 @@ let test_conversion_graph () =
         ]
       ()
   in
-  let executed_graph = Engine.execute ~graph ~registry:primitive_registry |> expect_ok in
+  let executed_graph = Engine.execute ~simulation:None ~graph ~registry:primitive_registry |> expect_ok in
   let output_port = Node.make_port_ref ~node_id:(node_id "sum") ~port_index:0 in
   assert_true
     (Graph.port_value executed_graph output_port = Some (Node.Number_value 10.0))
@@ -223,7 +223,7 @@ let test_missing_executor () =
       ()
   in
   let registry = Executor_registry.empty in
-  match Engine.execute ~graph ~registry with
+  match Engine.execute ~simulation:None ~graph ~registry with
   | Error [ Engine_error.Missing_executor { executor_key = "add"; _ } ] -> ()
   | _ -> failwith "expected missing executor error"
 

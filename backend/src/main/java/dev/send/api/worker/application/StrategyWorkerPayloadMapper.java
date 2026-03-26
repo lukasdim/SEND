@@ -41,7 +41,26 @@ public class StrategyWorkerPayloadMapper {
     public ObjectNode toWorkerPayload(StrategyDocument strategyDocument) {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("strategyId", strategyDocument.id());
+        addGraphPayload(payload, strategyDocument);
+        return payload;
+    }
 
+    public ObjectNode toSimulationPayload(
+            StrategyDocument strategyDocument,
+            StrategySimulationConfig simulationConfig) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("strategyId", strategyDocument.id());
+        addGraphPayload(payload, strategyDocument);
+
+        ObjectNode simulation = payload.putObject("simulation");
+        simulation.put("startDate", simulationConfig.startDate());
+        simulation.put("endDate", simulationConfig.endDate());
+        simulation.put("initialCash", simulationConfig.initialCash());
+        simulation.put("includeTrace", simulationConfig.includeTrace());
+        return payload;
+    }
+
+    private void addGraphPayload(ObjectNode payload, StrategyDocument strategyDocument) {
         ObjectNode graph = payload.putObject("graph");
         ArrayNode nodes = graph.putArray("nodes");
         for (GraphNode node : strategyDocument.nodes()) {
@@ -76,8 +95,6 @@ public class StrategyWorkerPayloadMapper {
                     .orElseThrow(() -> new IllegalStateException("Missing node spec for node type: " + nodeType));
             nodeSpecs.add(spec.payload().deepCopy());
         }
-
-        return payload;
     }
 
     private ObjectNode toDataField(Entry<String, JsonNode> entry) {

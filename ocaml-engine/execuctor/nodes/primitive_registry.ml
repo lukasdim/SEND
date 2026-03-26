@@ -19,6 +19,8 @@ let all =
     Fetch_financial_statements.executor;
     Fetch_fundamentals.executor;
     Fetch_price.executor;
+    Buy.executor;
+    Sell.executor;
     Eq.executor;
     Neq.executor;
     If_node.executor;

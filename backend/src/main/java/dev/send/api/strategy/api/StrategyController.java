@@ -19,13 +19,17 @@ import org.springframework.web.bind.annotation.RestController;
 import dev.send.api.catalog.api.dto.NodeIoCatalogDto;
 import dev.send.api.catalog.application.NodeCatalogService;
 import dev.send.api.strategy.api.dto.StrategyDocumentDto;
+import dev.send.api.strategy.api.dto.StrategySimulationRequestDto;
+import dev.send.api.strategy.api.dto.StrategySimulationResultDto;
 import dev.send.api.strategy.application.StrategyDocumentMapper;
 import dev.send.api.strategy.application.StrategyService;
 import dev.send.api.strategy.application.StrategyValidationException;
 import dev.send.api.worker.application.StrategyExecutionException;
+import dev.send.api.worker.application.StrategySimulationConfig;
 import dev.send.api.worker.application.StrategyExecutionService;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @RestController
 @RequestMapping("/api/strategies")
@@ -34,16 +38,19 @@ public class StrategyController {
     private final StrategyDocumentMapper strategyDocumentMapper;
     private final NodeCatalogService nodeCatalogService;
     private final StrategyExecutionService strategyExecutionService;
+    private final ObjectMapper objectMapper;
 
     public StrategyController(
             StrategyService strategyService,
             StrategyDocumentMapper strategyDocumentMapper,
             NodeCatalogService nodeCatalogService,
-            StrategyExecutionService strategyExecutionService) {
+            StrategyExecutionService strategyExecutionService,
+            ObjectMapper objectMapper) {
         this.strategyService = strategyService;
         this.strategyDocumentMapper = strategyDocumentMapper;
         this.nodeCatalogService = nodeCatalogService;
         this.strategyExecutionService = strategyExecutionService;
+        this.objectMapper = objectMapper;
     }
 
     @GetMapping
@@ -62,6 +69,26 @@ public class StrategyController {
     @PostMapping("/test")
     public JsonNode test(@RequestBody StrategyDocumentDto strategyDocumentDto) {
         return strategyExecutionService.executeGraphResults(strategyDocumentMapper.toDomain(strategyDocumentDto));
+    }
+
+    @PostMapping("/simulate")
+    public StrategySimulationResultDto simulate(@RequestBody StrategySimulationRequestDto requestDto) {
+        if (requestDto == null || requestDto.strategy() == null) {
+            throw new StrategyValidationException("Simulation strategy is required.");
+        }
+        if (requestDto.simulation() == null) {
+            throw new StrategyValidationException("Simulation config is required.");
+        }
+
+        StrategySimulationConfig simulationConfig = new StrategySimulationConfig(
+                requestDto.simulation().startDate(),
+                requestDto.simulation().endDate(),
+                requestDto.simulation().initialCash(),
+                requestDto.simulation().includeTrace() == null || requestDto.simulation().includeTrace());
+        JsonNode result = strategyExecutionService.simulateGraphResults(
+                strategyDocumentMapper.toDomain(requestDto.strategy()),
+                simulationConfig);
+        return objectMapper.convertValue(result, StrategySimulationResultDto.class);
     }
 
     @GetMapping("/{id}")

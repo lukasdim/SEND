@@ -19,28 +19,34 @@ let number_of_field field share_price =
 let run context =
   let* ticker = Executor.expect_string_field context "ticker" in
   let* field = Executor.expect_string_field context "field" in
-  let* date = Executor.expect_string_field context "date" in
-  let reader = Market_data_reader.connect_from_env () in
-  Fun.protect
-    ~finally:(fun () -> Market_data_reader.close reader)
-    (fun () ->
-      match Market_data_reader.find_share_price_on_date reader ~ticker ~price_date:date with
+  match context.Executor.simulation with
+  | Some simulation -> (
+      let* date = Executor.resolve_effective_date context ~explicit_field_name:"date" in
+      match simulation.lookup_price_value ~ticker ~field ~date with
+      | Some value -> Executor.single_output 0 (Node.normalize_number value)
       | None ->
-          Error
-            (Executor.Message
-               ("No share price found for ticker `" ^ ticker ^ "` on `" ^ date ^ "`."))
-      | Some share_price -> (
-          match number_of_field field share_price with
-          | Some value -> Executor.single_output 0 (Node.normalize_number value)
-          | None ->
-              Error
-                (Executor.Message
-                   ("Unsupported or missing price field `"
-                   ^ field
-                   ^ "` for ticker `"
-                   ^ ticker
-                   ^ "` on `"
-                   ^ date
-                   ^ "`."))))
+          Error (Executor.Message ("No share price found for ticker `" ^ ticker ^ "` on `" ^ date ^ "`.")))
+      )
+  | None ->
+      let* date = Executor.expect_string_field context "date" in
+      let reader = Market_data_reader.connect_from_env () in
+      Fun.protect
+        ~finally:(fun () -> Market_data_reader.close reader)
+        (fun () ->
+          match Market_data_reader.find_share_price_on_date reader ~ticker ~price_date:date with
+          | None -> Error (Executor.Message ("No share price found for ticker `" ^ ticker ^ "` on `" ^ date ^ "`."))
+          | Some share_price -> (
+              match number_of_field field share_price with
+              | Some value -> Executor.single_output 0 (Node.normalize_number value)
+              | None ->
+                  Error
+                    (Executor.Message
+                       ("Unsupported or missing price field `"
+                       ^ field
+                       ^ "` for ticker `"
+                       ^ ticker
+                       ^ "` on `"
+                       ^ date
+                       ^ "`."))))
 
 let executor = { Executor.key = "fetch_price"; run }

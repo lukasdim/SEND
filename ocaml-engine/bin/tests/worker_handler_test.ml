@@ -140,7 +140,21 @@ let test_handle_execute_graph_protocol_error () =
       assert_true (details = []) "expected no details for malformed protocol payload"
   | _ -> failwith "expected execute_graph failure response"
 
+let test_handle_simulate_graph_protocol_error () =
+  let request =
+    {
+      Worker_protocol.command = Worker_protocol.Simulate_graph;
+      payload = Some execution_payload;
+    }
+  in
+  match Worker_handler.handle_request request with
+  | Worker_protocol.Failure { code; details; _ } ->
+      assert_true (code = "protocol_error") "expected protocol_error code";
+      assert_true (details = []) "expected no details for malformed simulation payload"
+  | _ -> failwith "expected simulate_graph failure response"
+
 let run_all () =
   test_handle_validate_graph ();
   test_handle_execute_graph ();
-  test_handle_execute_graph_protocol_error ()
+  test_handle_execute_graph_protocol_error ();
+  test_handle_simulate_graph_protocol_error ()

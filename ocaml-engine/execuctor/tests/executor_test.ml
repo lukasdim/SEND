@@ -33,6 +33,7 @@ let context ?(data_fields = []) ~node_type ~node_spec ~inputs () =
     Executor.node = Node.make ~id:(node_id (node_type ^ "-node")) ~node_type ~data_fields ();
     node_spec;
     inputs;
+    simulation = None;
   }
 
 let expect_output expected = function
@@ -455,10 +456,12 @@ let test_executor_failures () =
           ()))
 
 let test_primitive_registry_lookup () =
-  assert_true (List.length Primitive_registry.all = 21) "expected full primitive executor set";
+  assert_true (List.length Primitive_registry.all = 26) "expected full primitive executor set";
   assert_true (Executor_registry.find "add" Primitive_registry.registry <> None) "expected add lookup";
   assert_true (Executor_registry.find "subtract" Primitive_registry.registry <> None) "expected subtract lookup";
-  assert_true (Executor_registry.find "to_string" Primitive_registry.registry <> None) "expected to_string lookup"
+  assert_true (Executor_registry.find "to_string" Primitive_registry.registry <> None) "expected to_string lookup";
+  assert_true (Executor_registry.find "buy" Primitive_registry.registry <> None) "expected buy lookup";
+  assert_true (Executor_registry.find "sell" Primitive_registry.registry <> None) "expected sell lookup"
 
 let run_all () =
   test_arithmetic_executors ();

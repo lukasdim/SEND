@@ -21,6 +21,8 @@
   fetch_financial_statements
   fetch_fundamentals
   fetch_price
+  buy
+  sell
   eq
   neq
   if_node

@@ -26,6 +26,17 @@ let test_decode_execute_graph () =
     "expected execute_graph command";
   assert_true (request.payload <> None) "expected payload to be preserved"
 
+let test_decode_simulate_graph () =
+  let request =
+    Worker_protocol.decode_request
+      "{\"command\":\"simulate_graph\",\"payload\":{\"simulation\":{\"startDate\":\"2024-01-01\",\"endDate\":\"2024-01-31\",\"initialCash\":1000,\"includeTrace\":true}}}"
+    |> expect_ok
+  in
+  assert_true
+    (request.command = Worker_protocol.Simulate_graph)
+    "expected simulate_graph command";
+  assert_true (request.payload <> None) "expected payload to be preserved"
+
 let test_invalid_json () =
   match Worker_protocol.decode_request "{" with
   | Error (Worker_protocol.Invalid_json _) -> ()
@@ -49,6 +60,7 @@ let test_invalid_command_type () =
 let run_all () =
   test_decode_validate_graph ();
   test_decode_execute_graph ();
+  test_decode_simulate_graph ();
   test_invalid_json ();
   test_missing_command ();
   test_unknown_command ();

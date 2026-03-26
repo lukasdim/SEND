@@ -1,5 +1,5 @@
 (library
  (name hackonomics_runtime)
  (wrapped false)
- (modules engine_error engine)
- (libraries hackonomics_engine hackonomics_executors hackonomics_nodes))
+ (modules engine_error engine simulation)
+ (libraries yojson unix hackonomics_engine hackonomics_executors hackonomics_nodes hackonomics_market_data))

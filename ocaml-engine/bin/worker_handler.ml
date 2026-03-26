@@ -88,6 +88,23 @@ let get_int_field fields field_name =
   | Some _ -> protocol_error ("Field `" ^ field_name ^ "` must be an integer.") []
   | None -> protocol_error ("Missing integer field `" ^ field_name ^ "`.") []
 
+let get_bool_field fields field_name =
+  match List.assoc_opt field_name fields with
+  | Some (`Bool value) -> Ok value
+  | Some _ -> protocol_error ("Field `" ^ field_name ^ "` must be a bool.") []
+  | None -> protocol_error ("Missing bool field `" ^ field_name ^ "`.") []
+
+let get_float_field fields field_name =
+  match List.assoc_opt field_name fields with
+  | Some (`Float value) -> Ok value
+  | Some (`Int value) -> Ok (float_of_int value)
+  | Some (`Intlit value) -> (
+      match float_of_string_opt value with
+      | Some value -> Ok value
+      | None -> protocol_error ("Field `" ^ field_name ^ "` must be a number.") [])
+  | Some _ -> protocol_error ("Field `" ^ field_name ^ "` must be a number.") []
+  | None -> protocol_error ("Missing number field `" ^ field_name ^ "`.") []
+
 let decode_runtime_value field_name = function
   | `Int value -> Ok (Node.Number_value (float_of_int value))
   | `Intlit value -> (
@@ -177,6 +194,19 @@ let decode_graph_payload payload =
       Ok (Graph.create ~node_specs ~nodes ~edges ())
   | Some _ -> protocol_error "Worker request payload must be an object." []
 
+let decode_simulation_payload payload =
+  match payload with
+  | None -> protocol_error "Worker request payload is required." []
+  | Some (`Assoc fields) ->
+      let* graph = decode_graph_payload payload in
+      let* simulation_fields = get_assoc_field fields "simulation" in
+      let* start_date = get_string_field simulation_fields "startDate" in
+      let* end_date = get_string_field simulation_fields "endDate" in
+      let* initial_cash = get_float_field simulation_fields "initialCash" in
+      let* include_trace = get_bool_field simulation_fields "includeTrace" in
+      Ok (graph, start_date, end_date, initial_cash, include_trace)
+  | Some _ -> protocol_error "Worker request payload must be an object." []
+
 let value_to_json = function
   | Node.Number_value value ->
       if Float.is_integer value then `Int (int_of_float value) else `Float value
@@ -224,7 +254,7 @@ let classify_engine_error (error : Engine_error.t) =
       (`Execution_failed, [ Engine_error.to_string error ])
 
 let execute_graph_result graph =
-  match Engine.execute ~graph ~registry:Primitive_registry.registry with
+  match Engine.execute ~simulation:None ~graph ~registry:Primitive_registry.registry with
   | Ok executed_graph -> Ok (collect_output_results executed_graph)
   | Error errors ->
       let kinds, details =
@@ -259,7 +289,29 @@ let handle_execute_graph request =
       | Error error -> failure_response request error)
   | Error error -> failure_response request error
 
+let execution_failure_from_details details =
+  match execution_error details with
+  | Error error -> error
+  | Ok _ -> assert false
+
+let handle_simulate_graph request =
+  match decode_simulation_payload request.Worker_protocol.payload with
+  | Ok (graph, start_date, end_date, initial_cash, include_trace) -> (
+      match
+        Simulation.simulate
+          ~graph
+          ~registry:Primitive_registry.registry
+          ~start_date
+          ~end_date
+          ~initial_cash
+          ~include_trace
+      with
+      | Ok result -> success_response request result
+      | Error details -> failure_response request (execution_failure_from_details details))
+  | Error error -> failure_response request error
+
 let handle_request request =
   match request.Worker_protocol.command with
   | Worker_protocol.Validate_graph -> handle_validate_graph request
   | Worker_protocol.Execute_graph -> handle_execute_graph request
+  | Worker_protocol.Simulate_graph -> handle_simulate_graph request

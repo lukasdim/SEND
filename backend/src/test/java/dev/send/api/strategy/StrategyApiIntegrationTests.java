@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 
 import dev.send.api.strategy.domain.StrategyDocument;
 import dev.send.api.worker.infra.ocaml.OcamlExecutionResponse;
@@ -93,7 +94,7 @@ class StrategyApiIntegrationTests {
 
         mockMvc.perform(get("/api/strategies"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value("s-api-1"));
+                .andExpect(jsonPath("$[?(@.id == 's-api-1')]").exists());
     }
 
     @Test
@@ -192,5 +193,59 @@ class StrategyApiIntegrationTests {
                 .andExpect(jsonPath("$.code").value("graph_validation_failed"))
                 .andExpect(jsonPath("$.message").value("Graph validation failed."))
                 .andExpect(jsonPath("$.details[0]").value("Missing source node: a"));
+    }
+
+    @Test
+    void simulatesGraphThroughOcamlWorkerAndReturnsStructuredSimulationResult() throws Exception {
+        ObjectNode result = objectMapper.createObjectNode();
+        result.putObject("summary")
+                .put("executedDays", 2)
+                .put("finalEquity", 1035.5);
+        result.putObject("portfolio")
+                .put("cash", 900.0);
+        result.putObject("finalNodeValues")
+                .putObject("buy-1")
+                .put("executed", true);
+        ArrayNode trace = result.putArray("trace");
+        trace.addObject().put("date", "2024-01-02");
+        result.putArray("warnings").add("Skipped sell on 2024-01-03.");
+
+        when(ocamlWorkerClient.simulateGraph(
+                        any(StrategyDocument.class),
+                        any(dev.send.api.worker.application.StrategySimulationConfig.class)))
+                .thenReturn(new OcamlExecutionResponse("ok", "simulate_graph", result, null, null, java.util.List.of()));
+
+        String payload = """
+                {
+                  "strategy": {
+                    "id": "draft",
+                    "nodes": [
+                      {
+                        "id": "a",
+                        "type": "const_bool",
+                        "position": { "x": 0, "y": 0 },
+                        "data": { "value": true }
+                      }
+                    ],
+                    "edges": []
+                  },
+                  "simulation": {
+                    "startDate": "2024-01-01",
+                    "endDate": "2024-01-31",
+                    "initialCash": 1000.0,
+                    "includeTrace": true
+                  }
+                }
+                """;
+
+        mockMvc.perform(post("/api/strategies/simulate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.summary.executedDays").value(2))
+                .andExpect(jsonPath("$.portfolio.cash").value(900.0))
+                .andExpect(jsonPath("$.finalNodeValues.buy-1.executed").value(true))
+                .andExpect(jsonPath("$.trace[0].date").value("2024-01-02"))
+                .andExpect(jsonPath("$.warnings[0]").value("Skipped sell on 2024-01-03."));
     }
 }

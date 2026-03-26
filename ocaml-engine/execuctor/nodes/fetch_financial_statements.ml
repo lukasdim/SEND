@@ -77,43 +77,59 @@ let rec find_statement_as_of_date target_date = function
       if report_date_is_on_or_before ~target_date statement then Some statement
       else find_statement_as_of_date target_date remaining
 
+let unsupported_field_message ~field ~ticker ~source_dataset ~report_date =
+  "Unsupported or missing financial statement field `"
+  ^ field
+  ^ "` for ticker `"
+  ^ ticker
+  ^ "`, source dataset `"
+  ^ source_dataset
+  ^ "`, and as-of date `"
+  ^ report_date
+  ^ "`."
+
+let missing_statement_message ~ticker ~source_dataset ~report_date =
+  "No financial statement found on or before `"
+  ^ report_date
+  ^ "` for ticker `"
+  ^ ticker
+  ^ "`, source dataset `"
+  ^ source_dataset
+  ^ "`."
+
 let run context =
   let* ticker = Executor.expect_string_field context "ticker" in
   let* source_dataset = Executor.expect_string_field context "sourceDataset" in
   let* field = Executor.expect_string_field context "field" in
-  let* report_date = Executor.expect_string_field context "reportDate" in
-  let reader = Market_data_reader.connect_from_env () in
-  Fun.protect
-    ~finally:(fun () -> Market_data_reader.close reader)
-    (fun () ->
-      let statements =
-        Market_data_reader.list_financial_statements ~source_dataset reader ~ticker
-      in
-      match find_statement_as_of_date report_date statements with
-      | None ->
-          Error
-            (Executor.Message
-               ("No financial statement found on or before `"
-               ^ report_date
-               ^ "` for ticker `"
-               ^ ticker
-               ^ "`, source dataset `"
-               ^ source_dataset
-               ^ "`."))
-      | Some statement -> (
-          match value_of_field field statement with
-          | Some value -> Executor.single_output 0 value
+  let unsupported_field_error report_date =
+    Error
+      (Executor.Message
+         (unsupported_field_message ~field ~ticker ~source_dataset ~report_date))
+  in
+  match context.Executor.simulation with
+  | Some simulation -> begin
+      let* report_date = Executor.resolve_effective_date context ~explicit_field_name:"reportDate" in
+      match simulation.lookup_financial_statement_value ~ticker ~source_dataset ~field ~report_date with
+      | Some value -> Executor.single_output 0 value
+      | None -> unsupported_field_error report_date
+    end
+  | None ->
+      let* report_date = Executor.expect_string_field context "reportDate" in
+      let reader = Market_data_reader.connect_from_env () in
+      Fun.protect
+        ~finally:(fun () -> Market_data_reader.close reader)
+        (fun () ->
+          let statements =
+            Market_data_reader.list_financial_statements ~source_dataset reader ~ticker
+          in
+          match find_statement_as_of_date report_date statements with
           | None ->
               Error
                 (Executor.Message
-                   ("Unsupported or missing financial statement field `"
-                   ^ field
-                   ^ "` for ticker `"
-                   ^ ticker
-                   ^ "`, source dataset `"
-                   ^ source_dataset
-                   ^ "`, and as-of date `"
-                   ^ report_date
-                   ^ "`."))))
+                   (missing_statement_message ~ticker ~source_dataset ~report_date))
+          | Some statement ->
+              match value_of_field field statement with
+              | Some value -> Executor.single_output 0 value
+              | None -> unsupported_field_error report_date)
 
 let executor = { Executor.key = "fetch_financial_statements"; run }

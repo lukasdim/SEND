@@ -17,6 +17,7 @@ val expected_port_kind : t -> Node.port_ref -> Node.value_kind option
 val validate : t -> (unit, Graph_error.t list) result
 val port_value : t -> Node.port_ref -> Node.value option
 val set_port_value : t -> Node.port_ref -> Node.value -> (unit, Graph_error.t list) result
+val clear_port_values : t -> unit
 val downstream : t -> Node.port_ref -> Node.port_ref list
 val incoming_count : t -> Node_id.t -> int
 val topological_sort : t -> (Node.t list, Graph_error.t list) result

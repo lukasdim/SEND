@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import dev.send.api.strategy.application.StrategyGraphValidator;
+import dev.send.api.strategy.application.StrategyValidationException;
 import dev.send.api.strategy.domain.StrategyDocument;
 import dev.send.api.worker.infra.ocaml.OcamlExecutionRequest;
 import dev.send.api.worker.infra.ocaml.OcamlExecutionResponse;
@@ -38,6 +39,14 @@ public class StrategyExecutionService {
     public OcamlExecutionRequest createExecuteRequest(StrategyDocument strategyDocument) {
         strategyGraphValidator.validate(strategyDocument);
         return ocamlWorkerClient.createExecuteRequest(strategyDocument);
+    }
+
+    public OcamlExecutionRequest createSimulateRequest(
+            StrategyDocument strategyDocument,
+            StrategySimulationConfig simulationConfig) {
+        strategyGraphValidator.validate(strategyDocument);
+        validateSimulationConfig(simulationConfig);
+        return ocamlWorkerClient.createSimulateRequest(strategyDocument, simulationConfig);
     }
 
     public OcamlExecutionResponse validateGraph(StrategyDocument strategyDocument) {
@@ -77,6 +86,41 @@ public class StrategyExecutionService {
         }
     }
 
+    public OcamlExecutionResponse simulateGraph(
+            StrategyDocument strategyDocument,
+            StrategySimulationConfig simulationConfig) {
+        strategyGraphValidator.validate(strategyDocument);
+        validateSimulationConfig(simulationConfig);
+        try {
+            OcamlExecutionResponse response = ocamlWorkerClient.simulateGraph(strategyDocument, simulationConfig);
+            if (!"ok".equals(response.status())) {
+                throw mapFailure(response);
+            }
+
+            JsonNode result = response.result();
+            if (!(result instanceof ObjectNode resultObject)) {
+                throw workerFailure(
+                        "protocol_error",
+                        "OCaml worker returned a malformed simulation result.",
+                        List.of());
+            }
+            return new OcamlExecutionResponse(
+                    response.status(),
+                    response.command(),
+                    resultObject.deepCopy(),
+                    response.code(),
+                    response.message(),
+                    response.details());
+        } catch (StrategyExecutionException exception) {
+            throw exception;
+        } catch (IllegalStateException exception) {
+            throw workerFailure(
+                    "worker_process_failed",
+                    "Java could not complete the OCaml worker request.",
+                    exception.getMessage() == null ? List.of() : List.of(exception.getMessage()));
+        }
+    }
+
     public ObjectNode executeGraphResults(StrategyDocument strategyDocument) {
         OcamlExecutionResponse response = executeGraph(strategyDocument);
         JsonNode result = response.result();
@@ -86,6 +130,20 @@ public class StrategyExecutionService {
         throw workerFailure(
                 "protocol_error",
                 "OCaml worker returned a malformed execution result.",
+                List.of());
+    }
+
+    public ObjectNode simulateGraphResults(
+            StrategyDocument strategyDocument,
+            StrategySimulationConfig simulationConfig) {
+        OcamlExecutionResponse response = simulateGraph(strategyDocument, simulationConfig);
+        JsonNode result = response.result();
+        if (result instanceof ObjectNode objectNode) {
+            return objectNode.deepCopy();
+        }
+        throw workerFailure(
+                "protocol_error",
+                "OCaml worker returned a malformed simulation result.",
                 List.of());
     }
 
@@ -107,5 +165,17 @@ public class StrategyExecutionService {
 
     private StrategyExecutionException workerFailure(String code, String message, List<String> details) {
         return new StrategyExecutionException(HttpStatus.BAD_GATEWAY, code, message, details);
+    }
+
+    private void validateSimulationConfig(StrategySimulationConfig simulationConfig) {
+        if (simulationConfig.startDate() == null || simulationConfig.startDate().isBlank()) {
+            throw new StrategyValidationException("Simulation startDate is required.");
+        }
+        if (simulationConfig.endDate() == null || simulationConfig.endDate().isBlank()) {
+            throw new StrategyValidationException("Simulation endDate is required.");
+        }
+        if (simulationConfig.initialCash() < 0) {
+            throw new StrategyValidationException("Simulation initialCash must be non-negative.");
+        }
     }
 }

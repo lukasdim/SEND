@@ -39,13 +39,10 @@ let rec find_value_as_of_date field target_date = function
 let run context =
   let* ticker = Executor.expect_string_field context "ticker" in
   let* field = Executor.expect_string_field context "field" in
-  let* report_date = Executor.expect_string_field context "reportDate" in
-  let reader = Market_data_reader.connect_from_env () in
-  Fun.protect
-    ~finally:(fun () -> Market_data_reader.close reader)
-    (fun () ->
-      let statements = Market_data_reader.list_financial_statements reader ~ticker in
-      match find_value_as_of_date field report_date statements with
+  match context.Executor.simulation with
+  | Some simulation -> (
+      let* report_date = Executor.resolve_effective_date context ~explicit_field_name:"reportDate" in
+      match simulation.lookup_fundamentals_value ~ticker ~field ~report_date with
       | Some value -> Executor.single_output 0 (Node.normalize_number value)
       | None ->
           Error
@@ -57,5 +54,25 @@ let run context =
                ^ "`, ticker `"
                ^ ticker
                ^ "`.")))
+      )
+  | None ->
+      let* report_date = Executor.expect_string_field context "reportDate" in
+      let reader = Market_data_reader.connect_from_env () in
+      Fun.protect
+        ~finally:(fun () -> Market_data_reader.close reader)
+        (fun () ->
+          let statements = Market_data_reader.list_financial_statements reader ~ticker in
+          match find_value_as_of_date field report_date statements with
+          | Some value -> Executor.single_output 0 (Node.normalize_number value)
+          | None ->
+              Error
+                (Executor.Message
+                   ("No fundamentals value found on or before `"
+                   ^ report_date
+                   ^ "` for field `"
+                   ^ field
+                   ^ "`, ticker `"
+                   ^ ticker
+                   ^ "`.")))
 
 let executor = { Executor.key = "fetch_fundamentals"; run }

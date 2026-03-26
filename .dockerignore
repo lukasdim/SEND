@@ -1,3 +1,6 @@
+ocaml-engine/_build
+_build
+
 **/.classpath
 **/.dockerignore
 **/.env

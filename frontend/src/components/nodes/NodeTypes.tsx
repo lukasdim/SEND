@@ -11,6 +11,14 @@ import {
 
 export type JsonScalar = string | number | boolean | null;
 export type NodeRuntimeResult = Record<string, JsonScalar>;
+export type NodeIssueSeverity = "error" | "warning";
+
+export type NodeErrorState = {
+  severity: NodeIssueSeverity;
+  summary: string;
+  details?: string[];
+  portIndex?: number;
+};
 
 export type NodeIoCatalog = {
   nodes: NodeIoDefinition[];
@@ -67,6 +75,7 @@ export type NodeData = {
   fieldValues: Record<string, JsonScalar>;
   inlineInputValues?: Record<string, number>;
   runtimeResult?: NodeRuntimeResult;
+  errorState?: NodeErrorState;
 };
 
 export type NodePaletteItem = {
@@ -237,6 +246,9 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
   const runtimeResult = data.runtimeResult;
   const hasRuntimeResult = runtimeResult && Object.keys(runtimeResult).length > 0;
   const isMathNode = isMathNodeType(data.nodeType);
+  const errorState = data.errorState;
+  const hasErrorState = Boolean(errorState);
+  const issueColor = errorState?.severity === "warning" ? "#E8A33B" : "#E24B4A";
 
   const visual = getNodeVisualForTheme(data.theme);
 
@@ -254,6 +266,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
               [key]: value,
             },
             runtimeResult: undefined,
+            errorState: undefined,
           },
         };
       })
@@ -281,6 +294,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
             ...nodeData,
             inlineInputValues: nextInlineInputValues,
             runtimeResult: undefined,
+            errorState: undefined,
           },
         };
       })
@@ -346,7 +360,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
     >
       <div
         style={{
-          border: `${visual.borderWidth}px solid ${visual.border}`,
+          border: `${hasErrorState ? 2 : visual.borderWidth}px solid ${hasErrorState ? issueColor : visual.border}`,
           borderRadius: 10,
           background: visual.background,
           fontFamily: "monospace",
@@ -357,6 +371,8 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
           minWidth: 160,
           boxShadow: hasRuntimeResult
             ? `0 0 0 1px ${visual.border}, 0 0 18px ${visual.border}55, 0 12px 28px rgba(0, 0, 0, 0.34)`
+            : hasErrorState
+              ? `0 0 0 1px ${issueColor}, 0 0 18px ${issueColor}35, 0 12px 28px rgba(0, 0, 0, 0.3)`
             : "0 10px 24px rgba(0, 0, 0, 0.18)",
         }}
       >
@@ -370,8 +386,8 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
               ...NODE_HANDLE_STYLE,
               width: 10,
               height: 10,
-              background: visual.handle,
-              border: "none",
+              background: errorState?.portIndex === port.index ? issueColor : visual.handle,
+              border: errorState?.portIndex === port.index ? `2px solid ${UI_CANVAS}` : "none",
               left: -8,
               top: getHandleTop(idx, inputPorts.length),
               transform: "translateY(-50%)",
@@ -390,6 +406,63 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
           }}
         >
           <NodeHeader visual={visual} name={data.displayName} />
+
+          {errorState && (
+            <div
+              style={{
+                margin: "0 10px 10px",
+                padding: "10px 11px",
+                borderRadius: 8,
+                border: `1px solid ${issueColor}`,
+                background: `${issueColor}14`,
+                color: UI_TEXT_PRIMARY,
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: issueColor,
+                  }}
+                >
+                  {errorState.severity === "warning" ? "Needs review" : "Needs attention"}
+                </div>
+                <div
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 999,
+                    background: `${issueColor}26`,
+                    color: issueColor,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    lineHeight: 1,
+                  }}
+                >
+                  !
+                </div>
+              </div>
+              <div style={{ fontSize: 12, lineHeight: 1.4 }}>{errorState.summary}</div>
+              {errorState.details && errorState.details.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {errorState.details.map((detail) => (
+                    <div key={detail} style={{ fontSize: 11, lineHeight: 1.35, color: UI_TEXT_SECONDARY }}>
+                      {detail}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {dataFields.length > 0 && (
             <div
@@ -712,12 +785,13 @@ export function createNodeRegistry(catalog: NodeIoCatalog): NodeRegistry {
     getDefaultNodeData: (type: string) => {
       const data = nodeDataByType[type];
       if (!data) return undefined;
-      return {
-        ...data,
-        inputs: [...data.inputs],
-        outputs: [...data.outputs],
-        dataFields: data.dataFields.map((field) => ({ ...field })),
-        fieldValues: { ...data.fieldValues },
+  return {
+      ...data,
+      inputs: [...data.inputs],
+      outputs: [...data.outputs],
+      dataFields: data.dataFields.map((field) => ({ ...field })),
+      fieldValues: { ...data.fieldValues },
+      errorState: data.errorState ? { ...data.errorState, details: data.errorState.details ? [...data.errorState.details] : undefined } : undefined,
       };
     },
     getNodeVisual: (type: string) => {

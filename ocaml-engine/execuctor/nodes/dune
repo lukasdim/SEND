@@ -17,6 +17,10 @@
   const_number
   const_bool
   const_string
+  fetch_company_profile
+  fetch_financial_statements
+  fetch_fundamentals
+  fetch_price
   eq
   neq
   if_node
@@ -24,4 +28,4 @@
   to_number
   to_string
   primitive_registry)
- (libraries hackonomics_executors))
+ (libraries hackonomics_executors hackonomics_market_data))

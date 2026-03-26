@@ -15,6 +15,10 @@ let all =
     Const_number.executor;
     Const_bool.executor;
     Const_string.executor;
+    Fetch_company_profile.executor;
+    Fetch_financial_statements.executor;
+    Fetch_fundamentals.executor;
+    Fetch_price.executor;
     Eq.executor;
     Neq.executor;
     If_node.executor;

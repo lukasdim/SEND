@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Landing from "./pages/Landing";
 import Library from "./pages/Library";
 import Sandbox from './pages/Sandbox';
+import LecturePage from "./pages/LecturePage";
 
 function App() {
   return (
@@ -9,6 +10,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/library" element={<Library />} />
+        <Route path="/library/:categorySlug/:lectureSlug" element={<LecturePage />} />
         <Route path="/sandbox" element={<Sandbox />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

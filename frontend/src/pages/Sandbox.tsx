@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import ReactFlow, {
   Background,
   type Connection,
@@ -1392,6 +1393,9 @@ function CalendarDateField({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState(() => startOfUtcMonth(toUtcDate(value)));
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const popupRef = useRef<HTMLDivElement | null>(null);
+  const [popupPosition, setPopupPosition] = useState({ top: 0, left: 0, width: 320, transformOrigin: "top left" });
 
   useEffect(() => {
     setViewMonth(startOfUtcMonth(toUtcDate(value)));
@@ -1404,6 +1408,71 @@ function CalendarDateField({
 
   const minTime = minDate ? toUtcDate(minDate).getTime() : Number.NEGATIVE_INFINITY;
   const maxTime = maxDate ? toUtcDate(maxDate).getTime() : Number.POSITIVE_INFINITY;
+
+  const updatePopupPosition = useCallback(() => {
+    const button = buttonRef.current;
+    if (!button) return;
+
+    const viewportPadding = 16;
+    const buttonRect = button.getBoundingClientRect();
+    const popupWidth = Math.min(320, window.innerWidth - viewportPadding * 2);
+    const measuredHeight = popupRef.current?.offsetHeight ?? 360;
+    const spaceBelow = window.innerHeight - buttonRect.bottom - viewportPadding;
+    const shouldOpenAbove = spaceBelow < measuredHeight && buttonRect.top > measuredHeight + 8;
+    const unclampedLeft = buttonRect.left;
+    const left = Math.min(
+      Math.max(viewportPadding, unclampedLeft),
+      Math.max(viewportPadding, window.innerWidth - popupWidth - viewportPadding)
+    );
+    const top = shouldOpenAbove
+      ? Math.max(viewportPadding, buttonRect.top - measuredHeight - 8)
+      : Math.min(window.innerHeight - measuredHeight - viewportPadding, buttonRect.bottom + 8);
+
+    setPopupPosition({
+      top,
+      left,
+      width: popupWidth,
+      transformOrigin: shouldOpenAbove ? "bottom left" : "top left",
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    updatePopupPosition();
+  }, [isOpen, updatePopupPosition, viewMonth]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleViewportChange = () => updatePopupPosition();
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      if (buttonRef.current?.contains(target) || popupRef.current?.contains(target)) {
+        return;
+      }
+      setIsOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, updatePopupPosition]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, position: "relative" }}>
@@ -1419,6 +1488,7 @@ function CalendarDateField({
         {label}
       </div>
       <button
+        ref={buttonRef}
         type="button"
         disabled={disabled}
         onClick={() => setIsOpen((current) => !current)}
@@ -1430,24 +1500,52 @@ function CalendarDateField({
           justifyContent: "space-between",
           cursor: disabled ? "not-allowed" : "pointer",
           opacity: disabled ? 0.65 : 1,
+          minWidth: 0,
         }}
       >
-        <span>{formatDisplayDate(value)}</span>
+        <span
+          style={{
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {formatDisplayDate(value)}
+        </span>
         <span style={{ color: UI_TEXT_SECONDARY, fontSize: 11 }}>{isOpen ? "Close" : "Pick"}</span>
       </button>
 
-      {isOpen && !disabled && (
-        <div
-          style={{
-            position: "relative",
-            zIndex: 8,
-            padding: 10,
-            border: `1px solid ${UI_BORDER_SUBTLE}`,
-            borderRadius: 10,
-            background: UI_CARD,
-            boxShadow: "0 14px 28px rgba(0, 0, 0, 0.24)",
-          }}
-        >
+      {isOpen &&
+        !disabled &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 60,
+              pointerEvents: "none",
+            }}
+          >
+            <div
+              ref={popupRef}
+              style={{
+                position: "fixed",
+                top: popupPosition.top,
+                left: popupPosition.left,
+                width: popupPosition.width,
+                zIndex: 61,
+                padding: 10,
+                border: `1px solid ${UI_BORDER_SUBTLE}`,
+                borderRadius: 10,
+                background: UI_CARD,
+                boxShadow: "0 14px 28px rgba(0, 0, 0, 0.24)",
+                animation: "calendarBubbleIn 180ms cubic-bezier(0.2, 0.9, 0.2, 1)",
+                transformOrigin: popupPosition.transformOrigin,
+                pointerEvents: "auto",
+              }}
+            >
           <div
             style={{
               display: "flex",
@@ -1555,8 +1653,10 @@ function CalendarDateField({
           <div style={{ marginTop: 8, fontSize: 11, color: UI_TEXT_SECONDARY }}>
             Weekends are unavailable for simulations.
           </div>
-        </div>
-      )}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
@@ -1651,6 +1751,7 @@ function ReplayTimeline({
   const onSliderPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (maxScrollLeft <= 0) return;
+      event.preventDefault();
 
       const track = event.currentTarget;
       const trackRect = track.getBoundingClientRect();
@@ -1677,11 +1778,13 @@ function ReplayTimeline({
         track.removeEventListener("pointermove", handlePointerMove);
         track.removeEventListener("pointerup", finish);
         track.removeEventListener("pointercancel", finish);
+        track.removeEventListener("lostpointercapture", finish);
       };
 
       track.addEventListener("pointermove", handlePointerMove);
       track.addEventListener("pointerup", finish);
       track.addEventListener("pointercancel", finish);
+      track.addEventListener("lostpointercapture", finish);
     },
     [maxScrollLeft, scrollTimelineToRatio]
   );
@@ -1834,6 +1937,8 @@ function ReplayTimeline({
               <button
                 key={day.date}
                 type="button"
+                draggable={false}
+                onDragStart={(event) => event.preventDefault()}
                 onMouseEnter={() => onHoverDay(day.index)}
                 onMouseLeave={onLeaveDay}
                 onFocus={() => onHoverDay(day.index)}
@@ -1911,6 +2016,8 @@ function ReplayTimeline({
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={maxScrollLeft <= 0 ? 0 : Math.round((scrollMetrics.left / maxScrollLeft) * 100)}
+          draggable={false}
+          onDragStart={(event) => event.preventDefault()}
           onPointerDown={onSliderPointerDown}
           style={{
             position: "relative",
@@ -1947,6 +2054,7 @@ function ReplayTimeline({
                 background: withAlpha(UI_ACCENT, 0.8),
                 border: `1px solid ${UI_ACCENT}`,
                 boxShadow: `0 6px 16px ${withAlpha(UI_ACCENT, 0.28)}`,
+                pointerEvents: "none",
               }}
             />
           )}
@@ -2855,6 +2963,17 @@ function SandboxInner() {
           to {
             opacity: 1;
             transform: translateX(-50%) translateY(0);
+          }
+        }
+
+        @keyframes calendarBubbleIn {
+          from {
+            opacity: 0;
+            transform: translateY(-8px) scale(0.98);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
           }
         }
 

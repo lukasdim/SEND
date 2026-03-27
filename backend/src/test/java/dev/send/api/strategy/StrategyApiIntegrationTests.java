@@ -20,6 +20,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 
 import dev.send.api.strategy.domain.StrategyDocument;
+import dev.send.api.strategy.application.StrategySimulationBounds;
+import dev.send.api.strategy.application.StrategySimulationBoundsService;
 import dev.send.api.worker.infra.ocaml.OcamlExecutionResponse;
 import dev.send.api.worker.infra.ocaml.OcamlWorkerClient;
 
@@ -34,6 +36,9 @@ class StrategyApiIntegrationTests {
 
     @MockBean
     private OcamlWorkerClient ocamlWorkerClient;
+
+    @MockBean
+    private StrategySimulationBoundsService strategySimulationBoundsService;
 
     @Test
     void createsListsAndFetchesStrategiesWithHandleAwareEdges() throws Exception {
@@ -101,13 +106,20 @@ class StrategyApiIntegrationTests {
     void exposesBundledLogicexStrategyForTesting() throws Exception {
         mockMvc.perform(get("/api/strategies"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.id == 'logicex')]").exists());
+                .andExpect(jsonPath("$[?(@.id == 'logicex')]").exists())
+                .andExpect(jsonPath("$[?(@.id == 'aapl_buy_sell_template')]").exists());
 
         mockMvc.perform(get("/api/strategies/logicex"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value("logicex"))
                 .andExpect(jsonPath("$.nodes.length()").value(13))
                 .andExpect(jsonPath("$.edges.length()").value(13));
+
+        mockMvc.perform(get("/api/strategies/aapl_buy_sell_template"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("aapl_buy_sell_template"))
+                .andExpect(jsonPath("$.nodes.length()").value(11))
+                .andExpect(jsonPath("$.edges.length()").value(12));
     }
 
     @Test
@@ -247,5 +259,17 @@ class StrategyApiIntegrationTests {
                 .andExpect(jsonPath("$.finalNodeValues.buy-1.executed").value(true))
                 .andExpect(jsonPath("$.trace[0].date").value("2024-01-02"))
                 .andExpect(jsonPath("$.warnings[0]").value("Skipped sell on 2024-01-03."));
+    }
+
+    @Test
+    void returnsGlobalSimulationBoundsForSandboxStartup() throws Exception {
+        when(strategySimulationBoundsService.getSimulationBounds())
+                .thenReturn(new StrategySimulationBounds(true, "2020-04-27", "2025-03-28"));
+
+        mockMvc.perform(get("/api/strategies/simulation-bounds"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hasPriceData").value(true))
+                .andExpect(jsonPath("$.earliestPriceDate").value("2020-04-27"))
+                .andExpect(jsonPath("$.latestPriceDate").value("2025-03-28"));
     }
 }

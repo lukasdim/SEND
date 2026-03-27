@@ -692,7 +692,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
           style={{
             position: "relative",
             zIndex: 4,
-            marginTop: -14,
+            marginTop: 8,
             marginLeft: 16,
             marginRight: 16,
             padding: "22px 14px 12px",

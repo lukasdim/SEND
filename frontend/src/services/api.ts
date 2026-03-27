@@ -24,6 +24,12 @@ export type StrategySimulationConfig = {
   includeTrace: true;
 };
 
+export type StrategySimulationBounds = {
+  hasPriceData: boolean;
+  earliestPriceDate: string | null;
+  latestPriceDate: string | null;
+};
+
 export type StrategySimulationTradeEvent = {
   nodeId: string;
   action: string;
@@ -115,6 +121,22 @@ export async function fetchNodeIoCatalog(signal?: AbortSignal): Promise<NodeIoCa
   const payload = (await response.json()) as unknown;
   if (!isNodeIoCatalog(payload)) {
     throw new Error("Malformed node catalog payload.");
+  }
+  return payload;
+}
+
+export async function fetchSimulationBounds(signal?: AbortSignal): Promise<StrategySimulationBounds> {
+  const response = await fetch(SANDBOX_STRATEGIES_API.simulationBoundsUrl, {
+    method: "GET",
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch simulation bounds (${response.status})`);
+  }
+
+  const payload = (await response.json()) as unknown;
+  if (!isStrategySimulationBounds(payload)) {
+    throw new Error("Malformed simulation bounds payload.");
   }
   return payload;
 }
@@ -295,6 +317,15 @@ function isStrategySimulationSummary(value: unknown): value is StrategySimulatio
     typeof value.realizedPnl === "number" &&
     typeof value.unrealizedPnl === "number" &&
     typeof value.tradeCount === "number"
+  );
+}
+
+function isStrategySimulationBounds(value: unknown): value is StrategySimulationBounds {
+  return (
+    isRecord(value) &&
+    typeof value.hasPriceData === "boolean" &&
+    (value.earliestPriceDate === null || typeof value.earliestPriceDate === "string") &&
+    (value.latestPriceDate === null || typeof value.latestPriceDate === "string")
   );
 }
 

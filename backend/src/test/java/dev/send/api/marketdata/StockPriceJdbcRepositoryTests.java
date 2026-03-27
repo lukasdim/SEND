@@ -1,6 +1,7 @@
 package dev.send.api.marketdata;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -8,6 +9,8 @@ import static org.mockito.Mockito.when;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
@@ -62,5 +65,32 @@ class StockPriceJdbcRepositoryTests {
         Optional<Instant> latestTime = repository.findLatestTime("AAPL");
 
         assertEquals(Instant.parse("2026-03-24T00:00:00Z"), latestTime.orElseThrow());
+    }
+
+    @Test
+    void findsGlobalPriceCoverageAcrossAllStockPrices() {
+        when(jdbcTemplate.queryForMap(any(String.class)))
+                .thenReturn(Map.of(
+                        "earliest_time", Timestamp.from(Instant.parse("2020-04-27T00:00:00Z")),
+                        "latest_time", Timestamp.from(Instant.parse("2025-03-28T00:00:00Z"))));
+
+        StockPriceJdbcRepository repository = new StockPriceJdbcRepository(jdbcTemplate);
+
+        StockPriceJdbcRepository.PriceCoverage coverage = repository.findGlobalPriceCoverage().orElseThrow();
+
+        assertEquals(Instant.parse("2020-04-27T00:00:00Z"), coverage.earliestTime());
+        assertEquals(Instant.parse("2025-03-28T00:00:00Z"), coverage.latestTime());
+    }
+
+    @Test
+    void returnsEmptyGlobalPriceCoverageWhenNoStockPricesExist() {
+        Map<String, Object> emptyCoverage = new HashMap<>();
+        emptyCoverage.put("earliest_time", null);
+        emptyCoverage.put("latest_time", null);
+        when(jdbcTemplate.queryForMap(any(String.class))).thenReturn(emptyCoverage);
+
+        StockPriceJdbcRepository repository = new StockPriceJdbcRepository(jdbcTemplate);
+
+        assertFalse(repository.findGlobalPriceCoverage().isPresent());
     }
 }

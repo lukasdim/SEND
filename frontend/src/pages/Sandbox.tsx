@@ -48,10 +48,12 @@ import {
   SANDBOX_STRATEGIES_API,
 } from "../config/sandboxConfig";
 import {
+  fetchSimulationBounds,
   fetchNodeIoCatalog,
   simulateStrategy,
   type ApiError,
   type StrategySimulationConfig,
+  type StrategySimulationBounds,
   type StrategySimulationResult,
   type StrategySimulationTraceDay,
   type StrategySimulationTradeEvent,
@@ -116,6 +118,8 @@ type ReplayDayModel = {
   index: number;
   date: string;
   status: ReplayDayStatus;
+  dailyPnl: number;
+  dotMarkers: string[];
   runtimeResults: Record<string, NodeRuntimeResult>;
   changedNodeIds: Set<string>;
   changedNodeCount: number;
@@ -308,19 +312,86 @@ function buildDefaultSimulationConfig(): StrategySimulationConfig {
   };
 }
 
-function adjustSimulationRange(config: StrategySimulationConfig): StrategySimulationConfig {
-  let startDate = isWeekendIsoDate(config.startDate)
-    ? formatIsoDate(clampToWeekday(toUtcDate(config.startDate), -1))
-    : config.startDate;
-  let endDate = isWeekendIsoDate(config.endDate)
-    ? formatIsoDate(clampToWeekday(toUtcDate(config.endDate), -1))
-    : config.endDate;
+function hasUsableSimulationBounds(
+  bounds: StrategySimulationBounds | null
+): bounds is StrategySimulationBounds & { earliestPriceDate: string; latestPriceDate: string } {
+  return Boolean(bounds?.hasPriceData && bounds.earliestPriceDate && bounds.latestPriceDate);
+}
+
+function clampIsoDateWithinRange(value: string, minDate?: string, maxDate?: string): string {
+  let nextValue = value;
+
+  if (minDate && toUtcDate(nextValue).getTime() < toUtcDate(minDate).getTime()) {
+    nextValue = minDate;
+  }
+
+  if (maxDate && toUtcDate(nextValue).getTime() > toUtcDate(maxDate).getTime()) {
+    nextValue = maxDate;
+  }
+
+  return nextValue;
+}
+
+function toSimulationRangeLimit(
+  startDate: string,
+  bounds: StrategySimulationBounds | null
+): string {
+  const sixMonthLimit = formatIsoDate(clampToWeekday(addUtcMonths(toUtcDate(startDate), 6), -1));
+  if (!hasUsableSimulationBounds(bounds)) {
+    return sixMonthLimit;
+  }
+
+  return toUtcDate(sixMonthLimit).getTime() < toUtcDate(bounds.latestPriceDate).getTime()
+    ? sixMonthLimit
+    : bounds.latestPriceDate;
+}
+
+function buildSimulationConfigFromBounds(
+  bounds: StrategySimulationBounds,
+  initialCash = 10000
+): StrategySimulationConfig {
+  if (!hasUsableSimulationBounds(bounds)) {
+    return {
+      ...buildDefaultSimulationConfig(),
+      initialCash,
+    };
+  }
+
+  const endDate = bounds.latestPriceDate;
+  const suggestedStart = formatIsoDate(clampToWeekday(addUtcDays(toUtcDate(endDate), -30), -1));
+  const startDate =
+    toUtcDate(suggestedStart).getTime() < toUtcDate(bounds.earliestPriceDate).getTime()
+      ? bounds.earliestPriceDate
+      : suggestedStart;
+
+  return {
+    startDate,
+    endDate,
+    initialCash,
+    includeTrace: true,
+  };
+}
+
+function adjustSimulationRange(
+  config: StrategySimulationConfig,
+  bounds: StrategySimulationBounds | null = null
+): StrategySimulationConfig {
+  let startDate = clampIsoDateWithinRange(
+    isWeekendIsoDate(config.startDate) ? formatIsoDate(clampToWeekday(toUtcDate(config.startDate), -1)) : config.startDate,
+    hasUsableSimulationBounds(bounds) ? bounds.earliestPriceDate : undefined,
+    hasUsableSimulationBounds(bounds) ? bounds.latestPriceDate : undefined
+  );
+  let endDate = clampIsoDateWithinRange(
+    isWeekendIsoDate(config.endDate) ? formatIsoDate(clampToWeekday(toUtcDate(config.endDate), -1)) : config.endDate,
+    hasUsableSimulationBounds(bounds) ? bounds.earliestPriceDate : undefined,
+    hasUsableSimulationBounds(bounds) ? bounds.latestPriceDate : undefined
+  );
 
   if (toUtcDate(endDate).getTime() < toUtcDate(startDate).getTime()) {
     endDate = startDate;
   }
 
-  const maxEndDate = formatIsoDate(clampToWeekday(addUtcMonths(toUtcDate(startDate), 6), -1));
+  const maxEndDate = toSimulationRangeLimit(startDate, bounds);
   if (toUtcDate(endDate).getTime() > toUtcDate(maxEndDate).getTime()) {
     endDate = maxEndDate;
   }
@@ -332,12 +403,28 @@ function adjustSimulationRange(config: StrategySimulationConfig): StrategySimula
   };
 }
 
-function validateSimulationConfig(config: StrategySimulationConfig): string | null {
+function validateSimulationConfig(
+  config: StrategySimulationConfig,
+  bounds: StrategySimulationBounds | null = null
+): string | null {
+  if (bounds && !bounds.hasPriceData) {
+    return "Simulation is unavailable until stock price data is loaded.";
+  }
+  if (bounds && hasUsableSimulationBounds(bounds) === false) {
+    return "Simulation date bounds could not be loaded.";
+  }
   if (!config.startDate || !config.endDate) {
     return "Choose a start and end date before running the simulation.";
   }
   if (isWeekendIsoDate(config.startDate) || isWeekendIsoDate(config.endDate)) {
     return "Start and end dates must be weekdays.";
+  }
+  if (
+    hasUsableSimulationBounds(bounds) &&
+    (toUtcDate(config.startDate).getTime() < toUtcDate(bounds.earliestPriceDate).getTime() ||
+      toUtcDate(config.endDate).getTime() > toUtcDate(bounds.latestPriceDate).getTime())
+  ) {
+    return `Simulation dates must stay between ${formatDisplayDate(bounds.earliestPriceDate)} and ${formatDisplayDate(bounds.latestPriceDate)}.`;
   }
   if (toUtcDate(config.endDate).getTime() < toUtcDate(config.startDate).getTime()) {
     return "End date must be on or after the start date.";
@@ -720,6 +807,27 @@ function createReplayPreviewLines(
   return nextLines;
 }
 
+function createReplayDotMarkers(traceDay: StrategySimulationTraceDay): string[] {
+  const nextMarkers: string[] = [];
+  const hasBuy = traceDay.trades.some((trade) => trade.action.toLowerCase() === "buy");
+  const hasSell = traceDay.trades.some((trade) => trade.action.toLowerCase() === "sell");
+  const hasWarning = traceDay.warnings.length > 0;
+
+  if (hasBuy) {
+    nextMarkers.push("B");
+  }
+
+  if (hasSell) {
+    nextMarkers.push("S");
+  }
+
+  if (hasWarning) {
+    nextMarkers.push("!");
+  }
+
+  return nextMarkers;
+}
+
 function applyTradeToReplayPositions(
   positionsByTicker: Map<string, ReplayPosition>,
   trade: StrategySimulationTradeEvent
@@ -802,6 +910,8 @@ function buildReplayDays(
           : traceDay.warnings.length > 0
             ? "warning"
             : "normal",
+      dailyPnl: traceDay.balanceSnapshot.realizedPnl + traceDay.balanceSnapshot.unrealizedPnl,
+      dotMarkers: createReplayDotMarkers(traceDay),
       runtimeResults,
       changedNodeIds,
       changedNodeCount: changedNodeIds.size,
@@ -1271,12 +1381,14 @@ function CalendarDateField({
   onChange,
   minDate,
   maxDate,
+  disabled,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   minDate?: string;
   maxDate?: string;
+  disabled?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState(() => startOfUtcMonth(toUtcDate(value)));
@@ -1308,6 +1420,7 @@ function CalendarDateField({
       </div>
       <button
         type="button"
+        disabled={disabled}
         onClick={() => setIsOpen((current) => !current)}
         style={{
           ...toolbarButtonStyle,
@@ -1315,14 +1428,15 @@ function CalendarDateField({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          cursor: "pointer",
+          cursor: disabled ? "not-allowed" : "pointer",
+          opacity: disabled ? 0.65 : 1,
         }}
       >
         <span>{formatDisplayDate(value)}</span>
         <span style={{ color: UI_TEXT_SECONDARY, fontSize: 11 }}>{isOpen ? "Close" : "Pick"}</span>
       </button>
 
-      {isOpen && (
+      {isOpen && !disabled && (
         <div
           style={{
             position: "relative",
@@ -1473,6 +1587,104 @@ function ReplayTimeline({
   onSelectDay: (index: number) => void;
 }) {
   const activeDay = session.replayDays[activeDayIndex];
+  const activeDayPnl = activeDay.dailyPnl;
+  const timelineScrollRef = useRef<HTMLDivElement | null>(null);
+  const [scrollMetrics, setScrollMetrics] = useState({ left: 0, viewportWidth: 0, scrollWidth: 0 });
+
+  const syncScrollMetrics = useCallback(() => {
+    const element = timelineScrollRef.current;
+    if (!element) return;
+
+    setScrollMetrics({
+      left: element.scrollLeft,
+      viewportWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    });
+  }, []);
+
+  useEffect(() => {
+    syncScrollMetrics();
+  }, [session.replayDays.length, syncScrollMetrics]);
+
+  useEffect(() => {
+    const element = timelineScrollRef.current;
+    if (!element) return;
+
+    syncScrollMetrics();
+    const handleScroll = () => syncScrollMetrics();
+    element.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("resize", handleScroll);
+
+    return () => {
+      element.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", handleScroll);
+    };
+  }, [syncScrollMetrics]);
+
+  const maxScrollLeft = Math.max(0, scrollMetrics.scrollWidth - scrollMetrics.viewportWidth);
+  const thumbWidth =
+    scrollMetrics.scrollWidth <= 0 || scrollMetrics.viewportWidth >= scrollMetrics.scrollWidth
+      ? 0
+      : Math.max(44, (scrollMetrics.viewportWidth / scrollMetrics.scrollWidth) * 100);
+  const thumbOffset =
+    maxScrollLeft <= 0 || thumbWidth === 0 ? 0 : (scrollMetrics.left / maxScrollLeft) * (100 - thumbWidth);
+
+  const scrollTimelineToRatio = useCallback((ratio: number) => {
+    const element = timelineScrollRef.current;
+    if (!element) return;
+
+    const boundedRatio = Math.max(0, Math.min(1, ratio));
+    element.scrollTo({ left: boundedRatio * Math.max(0, element.scrollWidth - element.clientWidth) });
+  }, []);
+
+  const onTimelineWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    const element = timelineScrollRef.current;
+    if (!element) return;
+
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    if (delta === 0) return;
+
+    event.preventDefault();
+    element.scrollBy({ left: delta });
+  }, []);
+
+  const onSliderPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (maxScrollLeft <= 0) return;
+
+      const track = event.currentTarget;
+      const trackRect = track.getBoundingClientRect();
+      const pointerId = event.pointerId;
+
+      const updateFromClientX = (clientX: number) => {
+        const ratio = (clientX - trackRect.left) / Math.max(trackRect.width, 1);
+        scrollTimelineToRatio(ratio);
+      };
+
+      updateFromClientX(event.clientX);
+      track.setPointerCapture(pointerId);
+
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== pointerId) return;
+        updateFromClientX(moveEvent.clientX);
+      };
+
+      const finish = (finishEvent: PointerEvent) => {
+        if (finishEvent.pointerId !== pointerId) return;
+        if (track.hasPointerCapture(pointerId)) {
+          track.releasePointerCapture(pointerId);
+        }
+        track.removeEventListener("pointermove", handlePointerMove);
+        track.removeEventListener("pointerup", finish);
+        track.removeEventListener("pointercancel", finish);
+      };
+
+      track.addEventListener("pointermove", handlePointerMove);
+      track.addEventListener("pointerup", finish);
+      track.addEventListener("pointercancel", finish);
+    },
+    [maxScrollLeft, scrollTimelineToRatio]
+  );
 
   return (
     <div
@@ -1523,7 +1735,7 @@ function ReplayTimeline({
             background: mode === "replay" ? withAlpha(UI_ACCENT, 0.16) : UI_CARD,
           }}
         >
-          {mode === "replay" ? "Back to edit" : "Open Replay"}
+          {mode === "replay" ? "Back to edit" : "Open Replay View"}
         </button>
       </div>
 
@@ -1554,6 +1766,9 @@ function ReplayTimeline({
           <span>Equity {formatCurrency(activeDay.trace.balanceSnapshot.equity)}</span>
           <span>Cash {formatCurrency(activeDay.trace.balanceSnapshot.cash)}</span>
           <span>Realized {formatSignedCurrency(activeDay.trace.balanceSnapshot.realizedPnl)}</span>
+          <span style={{ color: activeDayPnl >= 0 ? "#6FD58A" : "#F07A7A" }}>
+            Day P/L {formatSignedCurrency(activeDayPnl)}
+          </span>
         </div>
         {activeDay.previewLines.length > 0 ? (
           activeDay.previewLines.map((line) => (
@@ -1568,7 +1783,20 @@ function ReplayTimeline({
         )}
       </div>
 
-      <div style={{ position: "relative", overflowX: "auto", paddingTop: 8, width: "100%", minWidth: 0 }}>
+      <div
+        className="replay-timeline-scroll"
+        ref={timelineScrollRef}
+        onWheel={onTimelineWheel}
+        style={{
+          position: "relative",
+          overflowX: "auto",
+          paddingTop: 8,
+          width: "100%",
+          minWidth: 0,
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
+        }}
+      >
         <div
           style={{
             position: "absolute",
@@ -1593,14 +1821,14 @@ function ReplayTimeline({
           {session.replayDays.map((day) => {
             const isSelected = day.index === selectedDayIndex;
             const isHovered = day.index === hoveredDayIndex;
+            const pnlBackground = day.dailyPnl > 0 ? "#2EA66B" : day.dailyPnl < 0 ? "#E24B4A" : UI_TEXT_SECONDARY;
+            const markerCount = day.dotMarkers.length;
+            const markerGroupWidth = markerCount > 1 ? 26 : markerCount === 1 ? 16 : 0;
+            const buttonWidth = Math.max(isHovered || isSelected ? 18 : 14, markerGroupWidth);
             const background =
               isSelected
                 ? UI_ACCENT
-                : day.status === "error"
-                  ? "#E24B4A"
-                  : day.status === "warning"
-                    ? "#E8A33B"
-                    : UI_TEXT_SECONDARY;
+                : pnlBackground;
 
             return (
               <button
@@ -1611,16 +1839,13 @@ function ReplayTimeline({
                 onFocus={() => onHoverDay(day.index)}
                 onBlur={onLeaveDay}
                 onClick={() => onSelectDay(day.index)}
-                title={`${formatDisplayDate(day.date)} • ${
-                  day.status === "error"
-                    ? "errors"
-                    : day.status === "warning"
-                      ? "warnings"
-                      : "clean"
+                title={`${formatDisplayDate(day.date)} � P/L ${formatSignedCurrency(day.dailyPnl)}${
+                  day.dotMarkers.length > 0 ? ` � ${day.dotMarkers.join("/")}` : ""
                 }`}
                 style={{
-                  width: isHovered || isSelected ? 14 : 10,
-                  height: isHovered || isSelected ? 14 : 10,
+                  position: "relative",
+                  width: buttonWidth,
+                  height: isHovered || isSelected ? 18 : 14,
                   borderRadius: 999,
                   border: `2px solid ${isHovered ? UI_CARD : background}`,
                   background,
@@ -1630,9 +1855,101 @@ function ReplayTimeline({
                   transition: "transform 120ms ease, width 120ms ease, height 120ms ease, box-shadow 120ms ease",
                   transform: isHovered ? "translateY(-2px)" : "translateY(0)",
                 }}
-              />
+              >
+                {day.dotMarkers.length > 0 && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 2,
+                      color: UI_CANVAS,
+                      fontSize: day.dotMarkers.length > 1 ? 8 : 9,
+                      fontWeight: 800,
+                      letterSpacing: "0.01em",
+                      lineHeight: 1,
+                      pointerEvents: "none",
+                    }}
+                  >
+                    {day.dotMarkers.map((marker) => (
+                      <span
+                        key={`${day.date}-${marker}`}
+                        style={{
+                          color: marker === "!" ? "#E8A33B" : UI_CANVAS,
+                          textShadow:
+                            "-1px 0 0 #FFFFFF, 1px 0 0 #FFFFFF, 0 -1px 0 #FFFFFF, 0 1px 0 #FFFFFF, -1px -1px 0 #FFFFFF, 1px -1px 0 #FFFFFF, -1px 1px 0 #FFFFFF, 1px 1px 0 #FFFFFF",
+                        }}
+                      >
+                        {marker}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </button>
             );
           })}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: UI_TEXT_SECONDARY,
+          }}
+        >
+          Scroll
+        </div>
+        <div
+          role="slider"
+          aria-label="Replay timeline scroll"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={maxScrollLeft <= 0 ? 0 : Math.round((scrollMetrics.left / maxScrollLeft) * 100)}
+          onPointerDown={onSliderPointerDown}
+          style={{
+            position: "relative",
+            flex: 1,
+            height: 18,
+            borderRadius: 999,
+            background: UI_CARD,
+            border: `1px solid ${UI_BORDER_SUBTLE}`,
+            cursor: maxScrollLeft > 0 ? "pointer" : "default",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: "50%",
+              height: 4,
+              transform: "translateY(-50%)",
+              background: withAlpha(UI_BORDER_STRONG, 0.65),
+            }}
+          />
+          {thumbWidth > 0 && (
+            <div
+              style={{
+                position: "absolute",
+                left: `${thumbOffset}%`,
+                top: 1,
+                bottom: 1,
+                width: `${thumbWidth}%`,
+                minWidth: 44,
+                borderRadius: 999,
+                background: withAlpha(UI_ACCENT, 0.8),
+                border: `1px solid ${UI_ACCENT}`,
+                boxShadow: `0 6px 16px ${withAlpha(UI_ACCENT, 0.28)}`,
+              }}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -1655,6 +1972,9 @@ function SandboxInner() {
   const [isStrategyLoading, setIsStrategyLoading] = useState(false);
   const [isStrategySaving, setIsStrategySaving] = useState(false);
   const [isStrategyTesting, setIsStrategyTesting] = useState(false);
+  const [simulationBounds, setSimulationBounds] = useState<StrategySimulationBounds | null>(null);
+  const [isSimulationBoundsLoading, setIsSimulationBoundsLoading] = useState(true);
+  const [simulationBoundsError, setSimulationBoundsError] = useState("");
   const [simulationConfig, setSimulationConfig] = useState<StrategySimulationConfig>(() =>
     buildDefaultSimulationConfig()
   );
@@ -1725,8 +2045,13 @@ function SandboxInner() {
     [edges, nodes]
   );
   const simulationValidationMessage = useMemo(
-    () => validateSimulationConfig(simulationConfig),
-    [simulationConfig]
+    () =>
+      isSimulationBoundsLoading
+        ? "Loading simulation date bounds..."
+        : simulationBoundsError
+          ? "Simulation date bounds could not be loaded."
+          : validateSimulationConfig(simulationConfig, simulationBounds),
+    [isSimulationBoundsLoading, simulationBounds, simulationBoundsError, simulationConfig]
   );
   const replayHasDraftChanges = Boolean(
     simulationSession && simulationSession.graphSignature !== currentDraftGraphSignature
@@ -1868,6 +2193,43 @@ function SandboxInner() {
     };
 
     void loadNodeCatalog();
+    return () => abortController.abort();
+  }, [notifyTransientBanner]);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    const loadSimulationBounds = async () => {
+      setIsSimulationBoundsLoading(true);
+      setSimulationBoundsError("");
+      try {
+        const bounds = await fetchSimulationBounds(abortController.signal);
+        setSimulationBounds(bounds);
+        if (bounds.hasPriceData && bounds.earliestPriceDate && bounds.latestPriceDate) {
+          setSimulationConfig((current) =>
+            adjustSimulationRange(
+              {
+                ...buildSimulationConfigFromBounds(bounds, current.initialCash),
+                initialCash: current.initialCash,
+              },
+              bounds
+            )
+          );
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setSimulationBoundsError("Simulation date bounds could not be loaded.");
+        notifyTransientBanner(
+          "Could not load simulation dates",
+          "The sandbox could not determine the available market-data range.",
+          ["Refresh the page or verify the backend is running."]
+        );
+      } finally {
+        setIsSimulationBoundsLoading(false);
+      }
+    };
+
+    void loadSimulationBounds();
     return () => abortController.abort();
   }, [notifyTransientBanner]);
 
@@ -2333,8 +2695,8 @@ function SandboxInner() {
       return;
     }
 
-    const normalizedSimulationConfig = adjustSimulationRange(simulationConfig);
-    const simulationError = validateSimulationConfig(normalizedSimulationConfig);
+    const normalizedSimulationConfig = adjustSimulationRange(simulationConfig, simulationBounds);
+    const simulationError = validateSimulationConfig(normalizedSimulationConfig, simulationBounds);
     setSimulationConfig(normalizedSimulationConfig);
     if (simulationError) {
       notifyTransientBanner("Simulation needs dates", simulationError);
@@ -2427,11 +2789,18 @@ function SandboxInner() {
     nodes,
     nodes.length,
     notifyTransientBanner,
+    simulationBounds,
     simulationConfig,
     setNodes,
   ]);
 
   const isReplayMode = sandboxMode === "replay" && simulationSession !== null;
+  const hasSimulationPriceData = hasUsableSimulationBounds(simulationBounds);
+  const simulationMinDate = hasSimulationPriceData ? simulationBounds.earliestPriceDate : undefined;
+  const simulationMaxDate = hasSimulationPriceData ? simulationBounds.latestPriceDate : undefined;
+  const simulationEndDateLimit = hasSimulationPriceData
+    ? toSimulationRangeLimit(simulationConfig.startDate, simulationBounds)
+    : formatIsoDate(clampToWeekday(addUtcMonths(toUtcDate(simulationConfig.startDate), 6), -1));
   const finalReplayDayIndex = simulationSession ? Math.max(simulationSession.replayDays.length - 1, 0) : 0;
   const isFinalReplayDay = Boolean(activeReplayDay && activeReplayDay.index === finalReplayDayIndex);
   const activeReplayPositions = useMemo(() => {
@@ -2562,6 +2931,10 @@ function SandboxInner() {
 
         .node-library-panel::-webkit-scrollbar-corner {
           background: transparent;
+        }
+
+        .replay-timeline-scroll::-webkit-scrollbar {
+          display: none;
         }
       `}</style>
 
@@ -2779,7 +3152,7 @@ function SandboxInner() {
                 onClick={() => setSandboxMode("replay")}
                 style={{ ...toolbarButtonStyle, marginTop: 10, cursor: "pointer" }}
               >
-                Open Replay
+                Open Replay View
               </button>
             )}
             {isReplayMode && (
@@ -2819,31 +3192,40 @@ function SandboxInner() {
                   <CalendarDateField
                     label="Start"
                     value={simulationConfig.startDate}
-                    maxDate={simulationConfig.endDate}
+                    minDate={simulationMinDate}
+                    maxDate={hasSimulationPriceData ? simulationConfig.endDate : undefined}
+                    disabled={isSimulationBoundsLoading || !hasSimulationPriceData}
                     onChange={(value) =>
                       setSimulationConfig((current) =>
-                        adjustSimulationRange({
-                          ...current,
-                          startDate: value,
-                          endDate:
-                            toUtcDate(current.endDate).getTime() < toUtcDate(value).getTime()
-                              ? value
-                              : current.endDate,
-                        })
+                        adjustSimulationRange(
+                          {
+                            ...current,
+                            startDate: value,
+                            endDate:
+                              toUtcDate(current.endDate).getTime() < toUtcDate(value).getTime()
+                                ? value
+                                : current.endDate,
+                          },
+                          simulationBounds
+                        )
                       )
                     }
                   />
                   <CalendarDateField
                     label="End"
                     value={simulationConfig.endDate}
-                    minDate={simulationConfig.startDate}
-                    maxDate={formatIsoDate(clampToWeekday(addUtcMonths(toUtcDate(simulationConfig.startDate), 6), -1))}
+                    minDate={hasSimulationPriceData ? simulationConfig.startDate : simulationMinDate}
+                    maxDate={hasSimulationPriceData ? simulationEndDateLimit : simulationMaxDate}
+                    disabled={isSimulationBoundsLoading || !hasSimulationPriceData}
                     onChange={(value) =>
                       setSimulationConfig((current) =>
-                        adjustSimulationRange({
-                          ...current,
-                          endDate: value,
-                        })
+                        adjustSimulationRange(
+                          {
+                            ...current,
+                            endDate: value,
+                          },
+                          simulationBounds
+                        )
                       )
                     }
                   />
@@ -2852,7 +3234,7 @@ function SandboxInner() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
                   <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <span style={sidebarFieldLabelStyle}>Period</span>
-                    <input value="1d" readOnly disabled style={sidebarInputStyle} />
+                    <input value="1d" readOnly disabled style={{ ...sidebarInputStyle, width: 72 }} />
                   </label>
                   <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <span style={sidebarFieldLabelStyle}>Initial cash</span>
@@ -2872,6 +3254,13 @@ function SandboxInner() {
                     />
                   </label>
                 </div>
+
+                {hasSimulationPriceData && (
+                  <div style={{ marginTop: 10, fontSize: 12, color: UI_TEXT_SECONDARY }}>
+                    Available price data: {formatDisplayDate(simulationBounds.earliestPriceDate)} to{" "}
+                    {formatDisplayDate(simulationBounds.latestPriceDate)}
+                  </div>
+                )}
 
                 {simulationValidationMessage && (
                   <div style={{ marginTop: 10, fontSize: 12, color: UI_ACCENT }}>
@@ -3131,13 +3520,30 @@ function SandboxInner() {
             <button
               type="button"
               onClick={() => void onTestStrategy()}
-              disabled={isStrategyTesting || nodes.length === 0 || Boolean(simulationValidationMessage)}
+              disabled={
+                isStrategyTesting ||
+                isSimulationBoundsLoading ||
+                !hasSimulationPriceData ||
+                nodes.length === 0 ||
+                Boolean(simulationValidationMessage)
+              }
               style={{
                 ...toolbarButtonStyle,
                 flex: 1,
-                opacity: isStrategyTesting || nodes.length === 0 || simulationValidationMessage ? 0.7 : 1,
+                opacity:
+                  isStrategyTesting ||
+                  isSimulationBoundsLoading ||
+                  !hasSimulationPriceData ||
+                  nodes.length === 0 ||
+                  simulationValidationMessage
+                    ? 0.7
+                    : 1,
                 cursor:
-                  isStrategyTesting || nodes.length === 0 || simulationValidationMessage
+                  isStrategyTesting ||
+                  isSimulationBoundsLoading ||
+                  !hasSimulationPriceData ||
+                  nodes.length === 0 ||
+                  simulationValidationMessage
                     ? "not-allowed"
                     : "pointer",
               }}
@@ -3236,6 +3642,8 @@ const sidebarFieldLabelStyle: React.CSSProperties = {
 };
 
 const sidebarInputStyle: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
   border: `1px solid ${UI_BORDER_SUBTLE}`,
   borderRadius: 8,
   padding: "8px 10px",
@@ -3332,3 +3740,4 @@ export default function Sandbox() {
     </ReactFlowProvider>
   );
 }
+

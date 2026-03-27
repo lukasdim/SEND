@@ -19,10 +19,12 @@ import org.springframework.web.bind.annotation.RestController;
 import dev.send.api.catalog.api.dto.NodeIoCatalogDto;
 import dev.send.api.catalog.application.NodeCatalogService;
 import dev.send.api.strategy.api.dto.StrategyDocumentDto;
+import dev.send.api.strategy.api.dto.StrategySimulationBoundsDto;
 import dev.send.api.strategy.api.dto.StrategySimulationRequestDto;
 import dev.send.api.strategy.api.dto.StrategySimulationResultDto;
 import dev.send.api.strategy.application.StrategyDocumentMapper;
 import dev.send.api.strategy.application.StrategyService;
+import dev.send.api.strategy.application.StrategySimulationBoundsService;
 import dev.send.api.strategy.application.StrategyValidationException;
 import dev.send.api.worker.application.StrategyExecutionException;
 import dev.send.api.worker.application.StrategySimulationConfig;
@@ -38,6 +40,7 @@ public class StrategyController {
     private final StrategyDocumentMapper strategyDocumentMapper;
     private final NodeCatalogService nodeCatalogService;
     private final StrategyExecutionService strategyExecutionService;
+    private final StrategySimulationBoundsService strategySimulationBoundsService;
     private final ObjectMapper objectMapper;
 
     public StrategyController(
@@ -45,11 +48,13 @@ public class StrategyController {
             StrategyDocumentMapper strategyDocumentMapper,
             NodeCatalogService nodeCatalogService,
             StrategyExecutionService strategyExecutionService,
+            StrategySimulationBoundsService strategySimulationBoundsService,
             ObjectMapper objectMapper) {
         this.strategyService = strategyService;
         this.strategyDocumentMapper = strategyDocumentMapper;
         this.nodeCatalogService = nodeCatalogService;
         this.strategyExecutionService = strategyExecutionService;
+        this.strategySimulationBoundsService = strategySimulationBoundsService;
         this.objectMapper = objectMapper;
     }
 
@@ -102,6 +107,15 @@ public class StrategyController {
     @GetMapping("/node-io")
     public NodeIoCatalogDto getNodeIoCatalog() {
         return nodeCatalogService.getNodeIoCatalog();
+    }
+
+    @GetMapping("/simulation-bounds")
+    public StrategySimulationBoundsDto getSimulationBounds() {
+        var bounds = strategySimulationBoundsService.getSimulationBounds();
+        return new StrategySimulationBoundsDto(
+                bounds.hasPriceData(),
+                bounds.earliestPriceDate(),
+                bounds.latestPriceDate());
     }
 
     @ExceptionHandler(StrategyValidationException.class)

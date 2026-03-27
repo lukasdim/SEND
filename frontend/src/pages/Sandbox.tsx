@@ -19,6 +19,7 @@ import {
   createEmptyNodeRegistry,
   createNodeRegistry,
   isMathNodeType,
+  type NodeIssueSeverity,
   type JsonScalar,
   type NodeData,
   type NodeErrorState,
@@ -812,6 +813,162 @@ function buildReplayDays(
   });
 }
 
+function stripReplayIssuePrefix(message: string): string {
+  const warningPrefixMatch = message.match(/^\d{4}-\d{2}-\d{2} \[[^\]]+\] (.+)$/);
+  if (warningPrefixMatch) {
+    return warningPrefixMatch[1] ?? message;
+  }
+
+  return message;
+}
+
+function extractReplayIssueNodeId(message: string): string | null {
+  const warningMatch = message.match(/^\d{4}-\d{2}-\d{2} \[([^\]]+)\]/);
+  if (warningMatch?.[1]) {
+    return warningMatch[1];
+  }
+
+  const engineMatch = message.match(/\bnode ([^:\s]+)(?::|\b)/i);
+  if (engineMatch?.[1]) {
+    return engineMatch[1];
+  }
+
+  return null;
+}
+
+function buildReplayNodeIssueMap(traceDay: StrategySimulationTraceDay): Map<string, NodeErrorState> {
+  const issuesByNodeId = new Map<
+    string,
+    {
+      severity: NodeIssueSeverity;
+      summary: string;
+      details: string[];
+    }
+  >();
+
+  const registerIssue = (severity: NodeIssueSeverity, rawMessage: string) => {
+    const nodeId = extractReplayIssueNodeId(rawMessage);
+    if (!nodeId) return;
+
+    const cleanedMessage = stripReplayIssuePrefix(rawMessage);
+    const existing = issuesByNodeId.get(nodeId);
+    if (!existing) {
+      issuesByNodeId.set(nodeId, {
+        severity,
+        summary: cleanedMessage,
+        details: [cleanedMessage],
+      });
+      return;
+    }
+
+    const nextSeverity = existing.severity === "error" || severity === "error" ? "error" : "warning";
+    const nextDetails = existing.details.includes(cleanedMessage)
+      ? existing.details
+      : [...existing.details, cleanedMessage];
+
+    issuesByNodeId.set(nodeId, {
+      severity: nextSeverity,
+      summary: existing.severity === "error" ? existing.summary : cleanedMessage,
+      details: nextDetails,
+    });
+  };
+
+  for (const warning of traceDay.warnings) {
+    registerIssue("warning", warning);
+  }
+
+  for (const error of traceDay.errors) {
+    registerIssue("error", error);
+  }
+
+  return new Map(
+    [...issuesByNodeId.entries()].map(([nodeId, issue]) => [
+      nodeId,
+      {
+        severity: issue.severity,
+        summary: issue.summary,
+        details: issue.details,
+      } satisfies NodeErrorState,
+    ])
+  );
+}
+
+function estimateReplayNodeHeight(node: Node<NodeData>): number {
+  const nodeData = node.data as NodeData;
+  let height = 92;
+
+  if ((nodeData.dataFields?.length ?? 0) > 0) {
+    height += nodeData.dataFields.length * 50;
+  }
+
+  if (isMathNodeType(nodeData.nodeType) && (nodeData.inputs?.length ?? 0) > 0) {
+    height += nodeData.inputs.length * 42;
+  }
+
+  if (nodeData.errorState) {
+    height += 94 + (nodeData.errorState.details?.length ?? 0) * 18;
+  }
+
+  if (nodeData.runtimeResult && Object.keys(nodeData.runtimeResult).length > 0) {
+    const runtimeLineCount = JSON.stringify(nodeData.runtimeResult, null, 2).split("\n").length;
+    height += 78 + runtimeLineCount * 14;
+  }
+
+  return height;
+}
+
+function applyReplayNodeSpacing(nodes: Node<NodeData>[]): Node<NodeData>[] {
+  const horizontalPadding = 24;
+  const verticalPadding = 28;
+  const estimatedWidth = 232;
+  const halfWidth = estimatedWidth / 2;
+  const placedBoxes: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+  const positionedNodes = new Map<string, Node<NodeData>>();
+
+  const sortedNodes = [...nodes].sort((left, right) =>
+    left.position.y === right.position.y ? left.position.x - right.position.x : left.position.y - right.position.y
+  );
+
+  for (const node of sortedNodes) {
+    const height = estimateReplayNodeHeight(node);
+    let y = node.position.y;
+    let top = y - height / 2;
+    let bottom = y + height / 2;
+    const left = node.position.x - halfWidth;
+    const right = node.position.x + halfWidth;
+    let hasOverlap = true;
+
+    while (hasOverlap) {
+      hasOverlap = false;
+
+      for (const box of placedBoxes) {
+        const overlapsHorizontally = left < box.right + horizontalPadding && right > box.left - horizontalPadding;
+        const overlapsVertically = top < box.bottom + verticalPadding && bottom > box.top - verticalPadding;
+
+        if (overlapsHorizontally && overlapsVertically) {
+          y = box.bottom + verticalPadding + height / 2;
+          top = y - height / 2;
+          bottom = y + height / 2;
+          hasOverlap = true;
+        }
+      }
+    }
+
+    const positionedNode = {
+      ...node,
+      position: {
+        ...node.position,
+        y,
+      },
+    };
+
+    positionedNodes.set(node.id, positionedNode);
+    placedBoxes.push({ left, right, top, bottom });
+  }
+
+  return nodes.map((node) => positionedNodes.get(node.id) ?? node);
+}
+
 function NodeTemplatePreview({
   node,
   getDefaultNodeData,
@@ -1583,15 +1740,18 @@ function SandboxInner() {
   const activeReplayDay = simulationSession?.replayDays[activeReplayDayIndex] ?? null;
   const replayNodes = useMemo(() => {
     if (!simulationSession || !activeReplayDay) return [];
+    const replayNodeIssueMap = buildReplayNodeIssueMap(activeReplayDay.trace);
 
-    return simulationSession.graphSnapshot.nodes.map((node) => {
+    const mappedNodes = simulationSession.graphSnapshot.nodes.map((node) => {
       const nodeData = node.data as NodeData;
       const runtimeResult = activeReplayDay.runtimeResults[node.id];
       const changedToday = activeReplayDay.changedNodeIds.has(node.id);
+      const replayIssue = replayNodeIssueMap.get(node.id);
 
       return {
         ...node,
         selected: false,
+        zIndex: runtimeResult || replayIssue ? 20 : 1,
         data: {
           ...nodeData,
           runtimeResult,
@@ -1601,11 +1761,13 @@ function SandboxInner() {
                 glow: changedToday,
               }
             : undefined,
-          errorState: undefined,
+          errorState: replayIssue,
           readOnly: true,
         },
       } as Node<NodeData>;
     });
+
+    return applyReplayNodeSpacing(mappedNodes);
   }, [activeReplayDay, simulationSession]);
   const replayEdges = useMemo(
     () =>

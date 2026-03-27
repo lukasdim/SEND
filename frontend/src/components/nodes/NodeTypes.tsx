@@ -676,7 +676,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
         <div
           style={{
             position: "relative",
-            zIndex: 0,
+            zIndex: 4,
             marginTop: -14,
             marginLeft: 16,
             marginRight: 16,

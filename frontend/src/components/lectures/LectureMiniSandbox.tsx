@@ -43,6 +43,7 @@ type LectureMiniSandboxProps = {
   onVerify: (submission: LectureCheckpointSubmission) => Promise<void>;
   verificationFeedback?: string;
   isVerifying: boolean;
+  isCompleted?: boolean;
 };
 
 type PaletteDragState = {
@@ -318,6 +319,7 @@ function SandboxInner({
   onVerify,
   verificationFeedback,
   isVerifying,
+  isCompleted = false,
 }: LectureMiniSandboxProps) {
   const { fitView, getZoom, screenToFlowPosition } = useReactFlow();
   const [nodeRegistry, setNodeRegistry] = useState(() => createEmptyNodeRegistry());
@@ -326,6 +328,7 @@ function SandboxInner({
   const [catalogMessage, setCatalogMessage] = useState<string | null>(null);
   const [localMessage, setLocalMessage] = useState<string | null>(null);
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
+  const initializedGraphSignatureRef = useRef<string | null>(null);
 
   const { nodePalette, nodeTypes, getDefaultNodeData, getNodeVisual, isSupportedNodeType } = nodeRegistry;
 
@@ -383,24 +386,45 @@ function SandboxInner({
       })),
     [checkpoint.sandboxPreset.starterEdges]
   );
+  const starterGraphSignature = JSON.stringify({
+    checkpointId: checkpoint.id,
+    starterNodes: checkpoint.sandboxPreset.starterNodes,
+    starterEdges: checkpoint.sandboxPreset.starterEdges,
+  });
 
   const [nodes, setNodes] = useState<Node<NodeData>[]>(initialNodes);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
 
   useEffect(() => {
+    if (isNodeCatalogLoading) {
+      return;
+    }
+
+    if (initializedGraphSignatureRef.current === starterGraphSignature) {
+      return;
+    }
+
     setNodes(initialNodes);
     setEdges(initialEdges);
     setLocalMessage(null);
+    initializedGraphSignatureRef.current = starterGraphSignature;
     window.requestAnimationFrame(() => {
       void fitView({ padding: 0.2, duration: 280 });
     });
-  }, [fitView, initialEdges, initialNodes]);
+  }, [fitView, initialEdges, initialNodes, isNodeCatalogLoading, starterGraphSignature]);
 
   const taskState = useMemo(
     () =>
       checkpoint.tasks.map((task) => {
+        if (isCompleted) {
+          return {
+            ...task,
+            complete: true,
+          };
+        }
+
         const taskKey = task.id.replace(/^task-/, "");
-        const matchingRequirement = checkpoint.sandboxPreset.requirements.find((requirement) => {
+        const matchingRequirement = checkpoint.sandboxPreset.requirements?.find((requirement) => {
           if (requirement.type === "node_present") {
             return taskKey.includes(requirement.nodeType.replace(/_/g, "-"));
           }
@@ -415,8 +439,14 @@ function SandboxInner({
           complete: matchingRequirement ? requirementSatisfied(matchingRequirement, nodes, edges) : false,
         };
       }),
-    [checkpoint.sandboxPreset.requirements, checkpoint.tasks, edges, nodes]
+    [checkpoint.sandboxPreset.requirements, checkpoint.tasks, edges, isCompleted, nodes]
   );
+  const allTasksComplete = taskState.length > 0 && taskState.every((task) => task.complete);
+  const resolvedFeedback = isCompleted
+    ? "Checkpoint complete."
+    : verificationFeedback === "Checkpoint verified. The next sublecture is now unlocked."
+      ? null
+      : verificationFeedback;
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setNodes((current) => applyNodeChanges(changes, current));
@@ -594,13 +624,13 @@ function SandboxInner({
           </div>
           <div className="lecture-mini-task-list">
             {taskState.map((task) => (
-              <div key={task.id} className={`lecture-mini-task ${task.complete ? "is-complete" : ""}`}>
-                <div className="lecture-mini-task-badge">{task.complete ? "Done" : "Next"}</div>
-                <div>
+              <label key={task.id} className={`lecture-mini-task ${task.complete ? "is-complete" : ""}`}>
+                <input type="checkbox" checked={task.complete} readOnly className="lecture-mini-task-checkbox" />
+                <div className="lecture-mini-task-copy">
                   <div className="lecture-mini-task-title">{task.label}</div>
                   <div className="lecture-mini-task-description">{task.description}</div>
                 </div>
-              </div>
+              </label>
             ))}
           </div>
 
@@ -628,7 +658,10 @@ function SandboxInner({
 
           <div className="lecture-mini-canvas-footer">
             <div className="lecture-mini-feedback">
-              {verificationFeedback ?? localMessage ?? "Drag real sandbox nodes into the lecture canvas and connect them."}
+              {resolvedFeedback ??
+                (allTasksComplete
+                  ? "All checklist items are complete. Run verification to unlock the next sublecture."
+                  : localMessage ?? "Drag real sandbox nodes into the lecture canvas and connect them.")}
             </div>
             <div className="lecture-mini-actions">
               <button
@@ -639,6 +672,7 @@ function SandboxInner({
                   setLocalMessage("Checkpoint sandbox reset to its starting graph.");
                 }}
                 className="lecture-mini-secondary"
+                disabled={isCompleted}
               >
                 Reset
               </button>
@@ -646,9 +680,9 @@ function SandboxInner({
                 type="button"
                 onClick={() => void handleVerify()}
                 className="lecture-mini-primary"
-                disabled={isVerifying}
+                disabled={isVerifying || isCompleted}
               >
-                {isVerifying ? "Verifying..." : "Run verification"}
+                {isCompleted ? "Verified" : isVerifying ? "Verifying..." : "Run verification"}
               </button>
             </div>
           </div>

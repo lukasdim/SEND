@@ -1,160 +1,218 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import LectureMiniSandbox from "../components/lectures/LectureMiniSandbox";
-import MarkdownContent from "../components/lectures/MarkdownContent";
-import { getLectureCategory, getLectureDefinition } from "../content/lectures/registry";
-import type { LectureDefinition, LectureProgress, LectureSectionNavItem } from "../features/lectures/types";
-import { fetchLectureProgress, saveLectureProgress, verifyLectureCheckpoint } from "../services/lectureApi";
+import MarkdownContent, { slugifyMarkdownHeading } from "../components/lectures/MarkdownContent";
+import type { LectureDetailResponse, LectureProgress } from "../features/lectures/types";
+import { fetchLectureBySlug, verifyLectureCheckpoint } from "../services/lectureApi";
 import "./LecturePage.css";
 
-function buildDefaultProgress(lecture: LectureDefinition): LectureProgress {
-  return {
-    lectureId: lecture.id,
-    highestUnlockedSublectureIndex: 0,
-    completedCheckpointIds: [],
-    activeCheckpointState: {},
-  };
-}
+type TocItem = {
+  id: string;
+  title: string;
+  locked: boolean;
+  completed: boolean;
+  current: boolean;
+  kind: "sublecture" | "heading";
+};
 
-function clampIndex(value: number, minimum: number, maximum: number): number {
-  return Math.min(Math.max(value, minimum), maximum);
+function getSublectureSectionId(index: number, title: string): string {
+  return `sublecture-${index}-${slugifyMarkdownHeading(title)}`;
 }
 
 export default function LecturePage() {
   const { categorySlug = "", lectureSlug = "" } = useParams();
-  const lecture = getLectureDefinition(categorySlug, lectureSlug);
-  const category = getLectureCategory(categorySlug);
-  const [progress, setProgress] = useState<LectureProgress | null>(lecture ? buildDefaultProgress(lecture) : null);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [isProgressLoading, setIsProgressLoading] = useState(true);
-  const [progressError, setProgressError] = useState<string | null>(null);
+  const [lectureDetail, setLectureDetail] = useState<LectureDetailResponse | null>(null);
+  const [progress, setProgress] = useState<LectureProgress | null>(null);
+  const [isLectureLoading, setIsLectureLoading] = useState(true);
+  const [lectureError, setLectureError] = useState<string | null>(null);
   const [isVerifyingCheckpoint, setIsVerifyingCheckpoint] = useState(false);
+  const [activeAnchorId, setActiveAnchorId] = useState<string | null>(null);
+  const [recentlyUnlockedIndex, setRecentlyUnlockedIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!lecture) {
+    if (!categorySlug || !lectureSlug) {
       return;
     }
 
     let isActive = true;
-    setIsProgressLoading(true);
-    setProgressError(null);
-    setProgress(buildDefaultProgress(lecture));
-    setActiveIndex(0);
+    setIsLectureLoading(true);
+    setLectureError(null);
+    setLectureDetail(null);
+    setProgress(null);
+    setRecentlyUnlockedIndex(null);
 
-    void fetchLectureProgress(lecture.id)
-      .then((nextProgress) => {
+    void fetchLectureBySlug(categorySlug, lectureSlug)
+      .then((detail) => {
         if (!isActive) {
           return;
         }
 
-        setProgress(nextProgress);
-        setActiveIndex(clampIndex(nextProgress.highestUnlockedSublectureIndex, 0, lecture.sublectures.length - 1));
+        setLectureDetail(detail);
+        setProgress(detail.progress);
+        setActiveAnchorId(getSublectureSectionId(0, detail.sublectures[0]?.title ?? "section"));
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!isActive) {
           return;
         }
 
-        const fallbackProgress = buildDefaultProgress(lecture);
-        setProgress(fallbackProgress);
-        setActiveIndex(0);
-        setProgressError("Progress could not be loaded, so this lecture started from the first unlocked section.");
+        setLectureError(error instanceof Error ? error.message : "The lecture could not be loaded.");
       })
       .finally(() => {
         if (isActive) {
-          setIsProgressLoading(false);
+          setIsLectureLoading(false);
         }
       });
 
     return () => {
       isActive = false;
     };
-  }, [lecture]);
+  }, [categorySlug, lectureSlug]);
 
-  if (!lecture || !category) {
+  useEffect(() => {
+    const anchorElements = Array.from(document.querySelectorAll<HTMLElement>("[data-lecture-anchor='true']"));
+    if (anchorElements.length === 0) {
+      return;
+    }
+
+    let frameId: number | null = null;
+
+    const updateActiveAnchor = () => {
+      frameId = null;
+
+      const topOffset = Math.min(180, Math.max(96, window.innerHeight * 0.18));
+      let nextActiveElement = anchorElements[0] ?? null;
+
+      for (const element of anchorElements) {
+        const rect = element.getBoundingClientRect();
+        if (rect.top - topOffset <= 0) {
+          nextActiveElement = element;
+          continue;
+        }
+        break;
+      }
+
+      if (nextActiveElement?.id) {
+        setActiveAnchorId((current) => (current === nextActiveElement.id ? current : nextActiveElement.id));
+      }
+    };
+
+    const scheduleUpdate = () => {
+      if (frameId !== null) {
+        return;
+      }
+      frameId = window.requestAnimationFrame(updateActiveAnchor);
+    };
+
+    scheduleUpdate();
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+    };
+  }, [lectureDetail, progress?.highestUnlockedSublectureIndex]);
+
+  if (!categorySlug || !lectureSlug) {
     return <Navigate to="/library" replace />;
   }
 
-  const safeProgress = progress ?? buildDefaultProgress(lecture);
-  const highestUnlockedIndex = clampIndex(
-    safeProgress.highestUnlockedSublectureIndex,
-    0,
-    lecture.sublectures.length - 1
+  if (!isLectureLoading && (!lectureDetail || !progress)) {
+    return <Navigate to="/library" replace />;
+  }
+
+  if (!lectureDetail || !progress) {
+    return (
+      <div className="lecture-page">
+        <div className="lecture-page__container">
+          <div className="lecture-inline-warning">{lectureError ?? "Loading lecture..."}</div>
+        </div>
+      </div>
+    );
+  }
+
+  const highestUnlockedIndex = Math.min(
+    Math.max(progress.highestUnlockedSublectureIndex, 0),
+    lectureDetail.sublectures.length - 1
   );
-  const currentIndex = clampIndex(activeIndex, 0, highestUnlockedIndex);
-  const activeSublecture = lecture.sublectures[currentIndex];
-  const checkpoint = activeSublecture.checkpointAfter;
-  const checkpointCompleted = checkpoint
-    ? safeProgress.completedCheckpointIds.includes(checkpoint.id)
-    : false;
-  const checkpointFeedback = checkpoint
-    ? safeProgress.activeCheckpointState[checkpoint.id]?.lastFeedback
-    : undefined;
-
-  const navItems = useMemo<LectureSectionNavItem[]>(() => {
-    return lecture.sublectures.map((sublecture, index) => ({
-      id: sublecture.id,
-      title: sublecture.title,
-      index,
-      locked: index > highestUnlockedIndex,
-      completed: index < highestUnlockedIndex || safeProgress.completedCheckpointIds.includes(sublecture.checkpointAfter?.id ?? ""),
-      current: index === currentIndex,
-    }));
-  }, [currentIndex, highestUnlockedIndex, lecture, safeProgress.completedCheckpointIds]);
-
-  const totalMilestones = lecture.sublectures.length + lecture.sublectures.filter((item) => item.checkpointAfter).length;
+  const unlockedSublectures = lectureDetail.sublectures.slice(0, highestUnlockedIndex + 1);
+  const totalMilestones =
+    lectureDetail.sublectures.length + lectureDetail.sublectures.filter((item) => item.checkpointAfter).length;
   const completedMilestones =
-    Math.min(highestUnlockedIndex + 1, lecture.sublectures.length) +
-    safeProgress.completedCheckpointIds.length;
+    Math.min(highestUnlockedIndex + 1, lectureDetail.sublectures.length) +
+    progress.completedCheckpointIds.length;
   const progressPercent = Math.round((completedMilestones / totalMilestones) * 100);
 
-  const handleSelectSection = (index: number) => {
-    if (index > highestUnlockedIndex) {
+  const tocItems: TocItem[] = lectureDetail.sublectures.flatMap((sublecture, index) => {
+    const sectionId = getSublectureSectionId(index, sublecture.title);
+    const locked = index > highestUnlockedIndex;
+    const completed =
+      index < highestUnlockedIndex ||
+      progress.completedCheckpointIds.includes(sublecture.checkpointAfter?.id ?? "");
+    const mainItem: TocItem = {
+      id: sectionId,
+      title: sublecture.title,
+      locked,
+      completed,
+      current: activeAnchorId === sectionId || Boolean(activeAnchorId?.startsWith(`${sectionId}--`)),
+      kind: "sublecture",
+    };
+
+    const headingItems = sublecture.headings.map((heading) => ({
+      id: heading.id,
+      title: heading.title,
+      locked,
+      completed,
+      current: activeAnchorId === heading.id,
+      kind: "heading" as const,
+    }));
+
+    return [mainItem, ...headingItems];
+  });
+
+  const scrollToAnchor = (anchorId: string, locked: boolean) => {
+    if (locked) {
       return;
     }
 
-    setActiveIndex(index);
+    const element = document.getElementById(anchorId);
+    if (!element) {
+      return;
+    }
+
+    setActiveAnchorId(anchorId);
+    element.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const handleVerifyCheckpoint = async (submission: any) => {
-    if (!checkpoint) {
-      return;
+  const handleVerifyCheckpoint = async (
+    checkpointId: string,
+    submission: {
+      nodes: { id: string; type: string; label?: string; position: { x: number; y: number } }[];
+      edges: { id: string; source: string; target: string }[];
     }
-
+  ) => {
     setIsVerifyingCheckpoint(true);
     try {
-      const result = await verifyLectureCheckpoint(lecture.id, checkpoint.id, submission);
-      const nextProgress: LectureProgress = {
-        ...safeProgress,
-        highestUnlockedSublectureIndex: Math.max(
-          safeProgress.highestUnlockedSublectureIndex,
-          result.newlyUnlockedSublectureIndex
-        ),
-        completedCheckpointIds: result.completedCheckpointIds,
-        activeCheckpointState: {
-          ...safeProgress.activeCheckpointState,
-          [checkpoint.id]: {
-            passed: result.passed,
-            lastFeedback: result.feedback,
-            lastAttemptedAt: new Date().toISOString(),
-          },
-        },
-      };
+      const previousHighestUnlockedIndex = progress.highestUnlockedSublectureIndex;
+      const result = await verifyLectureCheckpoint(lectureDetail.id, checkpointId, submission);
+      const refreshedLectureDetail = await fetchLectureBySlug(categorySlug, lectureSlug);
 
-      setProgress(nextProgress);
-      await saveLectureProgress(nextProgress);
+      setLectureDetail(refreshedLectureDetail);
+      setProgress(refreshedLectureDetail.progress);
 
-      if (result.passed) {
-        setActiveIndex(
-          clampIndex(result.newlyUnlockedSublectureIndex, 0, lecture.sublectures.length - 1)
-        );
+      if (result.passed && result.newlyUnlockedSublectureIndex > previousHighestUnlockedIndex) {
+        setRecentlyUnlockedIndex(result.newlyUnlockedSublectureIndex);
       }
+    } catch (error: unknown) {
+      setLectureError(error instanceof Error ? error.message : "Checkpoint verification failed.");
     } finally {
       setIsVerifyingCheckpoint(false);
     }
   };
-
-  const canAdvance = checkpointCompleted && currentIndex < lecture.sublectures.length - 1;
 
   return (
     <div className="lecture-page">
@@ -166,12 +224,12 @@ export default function LecturePage() {
           </Link>
 
           <div className="lecture-progress-shell">
-            <div className="lecture-progress-shell__eyebrow">{category.title}</div>
+            <div className="lecture-progress-shell__eyebrow">{lectureDetail.category.title}</div>
             <div className="lecture-progress-shell__header">
               <div>
-                <h1 className="lecture-progress-shell__title">{lecture.title}</h1>
+                <h1 className="lecture-progress-shell__title">{lectureDetail.title}</h1>
                 <div className="lecture-progress-shell__meta">
-                  {lecture.estimatedMinutes} min lecture • {completedMilestones}/{totalMilestones} milestones completed
+                  {lectureDetail.estimatedMinutes} min lecture • {completedMilestones}/{totalMilestones} milestones completed
                 </div>
               </div>
               <div className="lecture-badge">{progressPercent}% unlocked</div>
@@ -181,21 +239,26 @@ export default function LecturePage() {
               <div className="lecture-progress-fill" style={{ width: `${progressPercent}%` }} />
             </div>
             <div className="lecture-progress-caption">
-              <span>{category.description}</span>
-              <span>{isProgressLoading ? "Restoring saved progress..." : "Saved progress restored automatically"}</span>
+              <span>{lectureDetail.category.description}</span>
+              <span>{isLectureLoading ? "Restoring saved progress..." : "Saved progress restored automatically"}</span>
             </div>
           </div>
         </div>
 
         <div className="lecture-mobile-nav">
           <select
-            value={currentIndex}
-            onChange={(event) => handleSelectSection(Number(event.target.value))}
+            value={activeAnchorId ?? tocItems[0]?.id ?? ""}
+            onChange={(event) => {
+              const selectedItem = tocItems.find((item) => item.id === event.target.value);
+              if (!selectedItem) return;
+              scrollToAnchor(selectedItem.id, selectedItem.locked);
+            }}
           >
-            {navItems.map((item) => (
-              <option key={item.id} value={item.index} disabled={item.locked}>
+            {tocItems.map((item) => (
+              <option key={item.id} value={item.id} disabled={item.locked}>
                 {item.locked ? "Locked • " : ""}
-                {item.index + 1}. {item.title}
+                {item.kind === "heading" ? "↳ " : ""}
+                {item.title}
               </option>
             ))}
           </select>
@@ -205,15 +268,21 @@ export default function LecturePage() {
           <aside className="lecture-sidebar">
             <div className="lecture-sidebar-card">
               <h2 className="lecture-sidebar-title">Table of contents</h2>
-              {navItems.map((item) => (
+              {tocItems.map((item, index) => (
                 <button
                   key={item.id}
                   type="button"
-                  className={`lecture-sidebar-item${item.current ? " is-current" : ""}${item.locked ? " is-locked" : ""}`}
+                  className={`lecture-sidebar-item${item.current ? " is-current" : ""}${item.locked ? " is-locked" : ""}${
+                    item.kind === "heading" ? " is-heading" : ""
+                  }`}
                   disabled={item.locked}
-                  onClick={() => handleSelectSection(item.index)}
+                  onClick={() => scrollToAnchor(item.id, item.locked)}
                 >
-                  <span className="lecture-sidebar-index">{item.index + 1}</span>
+                  <span className="lecture-sidebar-index">
+                    {item.kind === "heading"
+                      ? "·"
+                      : index + 1 - tocItems.slice(0, index).filter((entry) => entry.kind === "heading").length}
+                  </span>
                   <span className="lecture-sidebar-label">{item.title}</span>
                   <span className="lecture-sidebar-status">
                     {item.locked ? "Locked" : item.current ? "Open" : item.completed ? "Done" : "Ready"}
@@ -223,37 +292,60 @@ export default function LecturePage() {
             </div>
           </aside>
 
-          <main className="lecture-content-card">
-            <div className="lecture-content-meta">
-              <span>{category.hero ?? category.description}</span>
-              <span>Section {currentIndex + 1} of {lecture.sublectures.length}</span>
-            </div>
-
-            {progressError && <div className="lecture-inline-warning">{progressError}</div>}
-
-            <MarkdownContent source={activeSublecture.contentSource} />
-
-            {checkpoint && !checkpointCompleted && (
-              <LectureMiniSandbox
-                checkpoint={checkpoint}
-                onVerify={handleVerifyCheckpoint}
-                verificationFeedback={checkpointFeedback}
-                isVerifying={isVerifyingCheckpoint}
-              />
-            )}
-
-            {checkpointCompleted && (
-              <div className="lecture-success-banner">
-                {checkpointFeedback ?? "Checkpoint complete. The next sublecture is unlocked."}
-                {canAdvance && (
-                  <div>
-                    <button type="button" onClick={() => handleSelectSection(currentIndex + 1)}>
-                      Continue to the next sublecture
-                    </button>
-                  </div>
-                )}
+          <main className="lecture-content-column">
+            <section className="lecture-content-card lecture-content-card--summary">
+              <div className="lecture-content-meta">
+                <span>{lectureDetail.category.hero ?? lectureDetail.category.description}</span>
+                <span>{unlockedSublectures.length} of {lectureDetail.sublectures.length} sublectures visible</span>
               </div>
-            )}
+
+              {lectureError && <div className="lecture-inline-warning">{lectureError}</div>}
+            </section>
+
+            <div className="lecture-sublecture-stack">
+              {unlockedSublectures.map((sublecture, index) => {
+                const sectionId = getSublectureSectionId(index, sublecture.title);
+                const checkpoint = sublecture.checkpointAfter;
+                const checkpointCompleted = checkpoint
+                  ? progress.completedCheckpointIds.includes(checkpoint.id)
+                  : false;
+                const checkpointFeedback = checkpoint
+                  ? progress.activeCheckpointState[checkpoint.id]?.lastFeedback
+                  : undefined;
+                const shouldAnimateUnlock = recentlyUnlockedIndex === index;
+
+                return (
+                  <div key={sublecture.id} className="lecture-flow-block">
+                    <section
+                      id={sectionId}
+                      data-lecture-anchor="true"
+                      className={`lecture-content-card lecture-sublecture-card lecture-anchor-target${
+                        shouldAnimateUnlock ? " is-newly-unlocked" : ""
+                      }`}
+                    >
+                      <div className="lecture-sublecture-meta">
+                        <div className="lecture-badge">Sublecture {index + 1}</div>
+                        <div className="lecture-sublecture-title">{sublecture.title}</div>
+                      </div>
+
+                      <MarkdownContent source={sublecture.contentSource ?? ""} sectionId={sectionId} />
+                    </section>
+
+                    {checkpoint && (
+                      <section className="lecture-content-card lecture-practice-card">
+                        <LectureMiniSandbox
+                          checkpoint={checkpoint}
+                          onVerify={(submission) => handleVerifyCheckpoint(checkpoint.id, submission)}
+                          verificationFeedback={checkpointFeedback}
+                          isVerifying={isVerifyingCheckpoint}
+                          isCompleted={checkpointCompleted}
+                        />
+                      </section>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </main>
         </div>
       </div>

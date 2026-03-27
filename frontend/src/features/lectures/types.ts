@@ -29,22 +29,28 @@ export type LectureCheckpointTask = {
   description: string;
 };
 
+export type LectureHeading = {
+  id: string;
+  title: string;
+  level: number;
+};
+
 export type LectureCheckpointRequirement =
   | {
       type: "node_present";
-      nodeType: LectureSandboxNodeType;
+      nodeType: string;
     }
   | {
       type: "connection_present";
-      sourceType: LectureSandboxNodeType;
-      targetType: LectureSandboxNodeType;
+      sourceType: string;
+      targetType: string;
     };
 
 export type LectureSandboxPreset = {
   allowedNodeTypes: LectureSandboxNodeType[];
   starterNodes: LectureSandboxNode[];
   starterEdges: LectureSandboxEdge[];
-  requirements: LectureCheckpointRequirement[];
+  requirements?: LectureCheckpointRequirement[];
 };
 
 export type CheckpointDefinition = {
@@ -58,8 +64,10 @@ export type CheckpointDefinition = {
 export type SublectureDefinition = {
   id: string;
   title: string;
-  contentSource: string;
+  contentSource: string | null;
+  headings: LectureHeading[];
   checkpointAfter?: CheckpointDefinition;
+  unlocked?: boolean;
 };
 
 export type LectureDefinition = {
@@ -70,6 +78,11 @@ export type LectureDefinition = {
   summary: string;
   estimatedMinutes: number;
   sublectures: SublectureDefinition[];
+};
+
+export type LectureDetailResponse = LectureDefinition & {
+  category: LectureCategory;
+  progress: LectureProgress;
 };
 
 export type LectureCatalogItem = Pick<
@@ -95,6 +108,7 @@ export type LectureCheckpointVerificationResult = {
   feedback: string;
   newlyUnlockedSublectureIndex: number;
   completedCheckpointIds: string[];
+  newlyUnlockedSublecture?: SublectureDefinition | null;
 };
 
 export type LectureProgress = {

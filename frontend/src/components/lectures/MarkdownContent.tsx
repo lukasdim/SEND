@@ -8,6 +8,21 @@ type MarkdownBlock =
   | { type: "unordered"; items: string[] }
   | { type: "paragraph"; text: string };
 
+export type MarkdownHeading = {
+  id: string;
+  title: string;
+  level: 2;
+};
+
+export function slugifyMarkdownHeading(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
+
 function parseMarkdown(source: string): MarkdownBlock[] {
   const lines = source.split(/\r?\n/);
   const blocks: MarkdownBlock[] = [];
@@ -106,7 +121,31 @@ const paragraphStyle: CSSProperties = {
   fontSize: 17,
 };
 
-export default function MarkdownContent({ source }: { source: string }) {
+export function extractMarkdownHeadings(source: string, sectionId: string): MarkdownHeading[] {
+  const blocks = parseMarkdown(source);
+
+  return blocks.flatMap((block) => {
+    if (block.type !== "heading2") {
+      return [];
+    }
+
+    return [
+      {
+        id: `${sectionId}--${slugifyMarkdownHeading(block.text)}`,
+        title: block.text,
+        level: 2 as const,
+      },
+    ];
+  });
+}
+
+export default function MarkdownContent({
+  source,
+  sectionId,
+}: {
+  source: string;
+  sectionId: string;
+}) {
   const blocks = parseMarkdown(source);
 
   return (
@@ -129,9 +168,13 @@ export default function MarkdownContent({ source }: { source: string }) {
         }
 
         if (block.type === "heading2") {
+          const headingId = `${sectionId}--${slugifyMarkdownHeading(block.text)}`;
           return (
             <h2
               key={`${block.type}-${index}`}
+              id={headingId}
+              data-lecture-anchor="true"
+              className="lecture-anchor-target"
               style={{
                 margin: "28px 0 12px",
                 fontSize: 30,

@@ -155,6 +155,11 @@
   background: rgba(175, 169, 236, 0.12);
 }
 
+.lecture-sidebar-item.is-heading {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding-left: 22px;
+}
+
 .lecture-sidebar-item.is-locked {
   color: #555577;
 }
@@ -201,6 +206,16 @@
   padding: 24px;
 }
 
+.lecture-content-column {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.lecture-content-card--summary {
+  padding-bottom: 18px;
+}
+
 .lecture-content-meta {
   display: flex;
   justify-content: space-between;
@@ -236,6 +251,46 @@
   color: #f0f0f8;
 }
 
+.lecture-sublecture-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.lecture-flow-block {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.lecture-sublecture-card,
+.lecture-practice-card {
+  overflow: hidden;
+}
+
+.lecture-sublecture-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.lecture-sublecture-title {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9999bb;
+}
+
+.lecture-anchor-target {
+  scroll-margin-top: 28px;
+}
+
+.lecture-sublecture-card.is-newly-unlocked {
+  animation: lectureFadeReveal 520ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
 .lecture-success-banner {
   margin-top: 22px;
   padding: 14px 16px;
@@ -250,11 +305,10 @@
 }
 
 .lecture-checkpoint-shell {
-  margin-top: 24px;
   border-radius: 28px;
-  border: 1px solid #333344;
-  background: #171721;
-  padding: 22px;
+  border: none;
+  background: transparent;
+  padding: 0;
 }
 
 .lecture-checkpoint-topline {
@@ -263,6 +317,10 @@
   gap: 16px;
   align-items: start;
   flex-wrap: wrap;
+  padding: 18px 18px 16px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(39, 39, 56, 0.96), rgba(27, 27, 39, 0.92));
+  border: 1px solid #333344;
 }
 
 .lecture-checkpoint-label {
@@ -282,6 +340,7 @@
   flex-direction: column;
   gap: 8px;
   margin-top: 14px;
+  padding: 0 4px;
   color: #9999bb;
 }
 
@@ -369,23 +428,50 @@
 }
 
 .lecture-mini-task {
-  padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid #333344;
-  background: #22222f;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  color: #f0f0f8;
+  cursor: default;
 }
 
 .lecture-mini-task.is-complete {
-  border-color: rgba(76, 212, 147, 0.45);
-  background: rgba(76, 212, 147, 0.12);
+  color: #9fb6a9;
 }
 
-.lecture-mini-task-badge {
-  margin-bottom: 6px;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #afa9ec;
+.lecture-mini-task-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  border-radius: 5px;
+  border: 1px solid #5b5b78;
+  background: #151520;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.lecture-mini-task-checkbox:checked {
+  border-color: rgba(76, 212, 147, 0.72);
+  background: rgba(76, 212, 147, 0.18);
+}
+
+.lecture-mini-task-checkbox:checked::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 4px;
+  height: 9px;
+  border: solid #4cd493;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.lecture-mini-task-copy {
+  min-width: 0;
 }
 
 .lecture-mini-task-title {
@@ -393,11 +479,25 @@
   font-weight: 700;
 }
 
+.lecture-mini-task.is-complete .lecture-mini-task-title,
+.lecture-mini-task.is-complete .lecture-mini-task-description {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+
+.lecture-mini-task.is-complete .lecture-mini-task-title {
+  color: #9fb6a9;
+}
+
 .lecture-mini-task-description {
   margin-top: 4px;
   color: #9999bb;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.lecture-mini-task.is-complete .lecture-mini-task-description {
+  color: #7f9488;
 }
 
 .lecture-mini-canvas-card {
@@ -465,9 +565,32 @@
   cursor: wait;
 }
 
+.lecture-mini-secondary:disabled,
+.lecture-mini-primary:disabled {
+  cursor: not-allowed;
+}
+
+.lecture-mini-secondary:disabled {
+  opacity: 0.55;
+}
+
 .lecture-mini-secondary {
   background: #22222f;
   color: #f0f0f8;
+}
+
+@keyframes lectureFadeReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(24px);
+    filter: blur(6px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
 }
 
 @media (max-width: 980px) {

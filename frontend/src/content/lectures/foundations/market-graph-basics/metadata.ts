@@ -15,6 +15,12 @@ const lecture: LectureDefinition = {
       id: "getting-started",
       title: "Getting Started",
       contentSource: gettingStarted,
+      headings: [
+        { id: "getting-started", title: "Getting Started", level: 1 },
+        { id: "what-you-are-building", title: "What you are building", level: 2 },
+        { id: "why-the-structure-matters", title: "Why the structure matters", level: 2 },
+        { id: "before-you-continue", title: "Before you continue", level: 2 },
+      ],
       checkpointAfter: {
         id: "checkpoint-place-buy",
         title: "Checkpoint 1: Add Your First Action",
@@ -44,6 +50,12 @@ const lecture: LectureDefinition = {
       id: "conditions-and-flow",
       title: "Conditions and Flow",
       contentSource: conditionsAndFlow,
+      headings: [
+        { id: "conditions-and-flow", title: "Conditions and Flow", level: 1 },
+        { id: "decision-nodes", title: "Decision nodes", level: 2 },
+        { id: "how-this-affects-lecture-pacing", title: "How this affects lecture pacing", level: 2 },
+        { id: "your-next-checkpoint", title: "Your next checkpoint", level: 2 },
+      ],
       checkpointAfter: {
         id: "checkpoint-wire-if",
         title: "Checkpoint 2: Connect Logic to Action",
@@ -78,6 +90,12 @@ const lecture: LectureDefinition = {
       id: "reading-the-map",
       title: "Reading the Map",
       contentSource: readingTheMap,
+      headings: [
+        { id: "reading-the-map", title: "Reading the Map", level: 1 },
+        { id: "what-this-lecture-demonstrated", title: "What this lecture demonstrated", level: 2 },
+        { id: "where-this-goes-next", title: "Where this goes next", level: 2 },
+        { id: "help-and-review", title: "Help and review", level: 2 },
+      ],
     },
   ],
 };

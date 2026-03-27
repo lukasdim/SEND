@@ -1,2 +1,6 @@
 .env
 .gradle-user-home
+/data
+.docker-config/
+.gradle-user-home/
+.gradle-user-home-strategy-seed/

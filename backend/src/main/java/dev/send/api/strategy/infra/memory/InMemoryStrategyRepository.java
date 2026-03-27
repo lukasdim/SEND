@@ -21,8 +21,9 @@ import dev.send.api.strategy.domain.StrategyRepository;
 
 @Repository
 public class InMemoryStrategyRepository implements StrategyRepository {
-    private static final String DEFAULT_STRATEGY_ID = "logicex";
-    private static final String DEFAULT_STRATEGY_RESOURCE = "/seed-strategies/logicex.json";
+    private static final Map<String, String> DEFAULT_STRATEGIES = Map.of(
+            "logicex", "/seed-strategies/logicex.json",
+            "aapl_buy_sell_template", "/seed-strategies/aapl_buy_sell_template.json");
 
     private final Map<String, StrategyDocument> store = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper;
@@ -49,7 +50,7 @@ public class InMemoryStrategyRepository implements StrategyRepository {
     }
 
     private void loadDefaultStrategies() {
-        store.put(DEFAULT_STRATEGY_ID, loadStrategyDocument(DEFAULT_STRATEGY_ID, DEFAULT_STRATEGY_RESOURCE));
+        DEFAULT_STRATEGIES.forEach((id, resourcePath) -> store.put(id, loadStrategyDocument(id, resourcePath)));
     }
 
     private StrategyDocument loadStrategyDocument(String id, String resourcePath) {

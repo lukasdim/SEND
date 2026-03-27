@@ -76,6 +76,9 @@ let set_port_value graph port_ref value =
   | None ->
       Error [ Graph_error.Invalid_target_port port_ref ]
 
+let clear_port_values graph =
+  graph.port_values <- Node.Port_ref_map.empty
+
 let validate_duplicate_nodes nodes =
   let rec loop seen errors = function
     | [] -> List.rev errors

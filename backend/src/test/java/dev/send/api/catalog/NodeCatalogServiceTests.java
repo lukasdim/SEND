@@ -2,9 +2,11 @@ package dev.send.api.catalog;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Objects;
 
 import org.junit.jupiter.api.Test;
 
@@ -65,7 +67,7 @@ class NodeCatalogServiceTests {
                         .orElseThrow()
                         .theme());
         assertEquals(
-                "Fetch Price",
+                "Fetch Price Data",
                 catalog.nodes().stream()
                         .filter(node -> node.nodeType().equals("fetch_price"))
                         .findFirst()
@@ -89,5 +91,35 @@ class NodeCatalogServiceTests {
                         .dataFields()
                         .getFirst()
                         .name());
+
+        NodeIoCatalogDto.NodeIoDefinitionDto fetchFinancialStatements = catalog.nodes().stream()
+                .filter(node -> node.nodeType().equals("fetch_financial_statements"))
+                .findFirst()
+                .orElseThrow();
+
+        NodeIoCatalogDto.NodeIoDataFieldDto sourceDataset = fetchFinancialStatements.dataFields().stream()
+                .filter(field -> field.name().equals("sourceDataset"))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("Financial Statement", sourceDataset.label());
+        assertEquals(
+                List.of("us-income-quarterly", "us-balance-quarterly", "us-cashflow-quarterly"),
+                sourceDataset.options());
+        assertEquals(
+                List.of("Income Statement", "Balance Sheet", "Cash Flow Statement"),
+                sourceDataset.readableOptions());
+        assertNull(sourceDataset.optionFilter());
+
+        NodeIoCatalogDto.NodeIoDataFieldDto statementField = fetchFinancialStatements.dataFields().stream()
+                .filter(field -> field.name().equals("field"))
+                .findFirst()
+                .orElseThrow();
+        NodeIoCatalogDto.NodeIoDataFieldDependencyDto optionFilter =
+                Objects.requireNonNull(statementField.optionFilter());
+        assertEquals("sourceDataset", optionFilter.field());
+        assertTrue(optionFilter.groups().containsKey("us-income-quarterly"));
+        NodeIoCatalogDto.NodeIoDataFieldOptionsDto incomeStatementOptions =
+                Objects.requireNonNull(optionFilter.groups().get("us-income-quarterly"));
+        assertTrue(incomeStatementOptions.options().containsAll(List.of("revenue", "cost_of_revenue", "sga")));
     }
 }

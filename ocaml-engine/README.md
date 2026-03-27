@@ -7,6 +7,7 @@ Planned areas:
 - `nodes/` for per-node executor implementations
 - `graph/` for graph and runtime value structures
 - `engine/` for scheduling and execution
+- `market_data/` for read-only PostgreSQL/Timescale access
 - `bin/` for the stdin/stdout worker entrypoint
 
 Build system:

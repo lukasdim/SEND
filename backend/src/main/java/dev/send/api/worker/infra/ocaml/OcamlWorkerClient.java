@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import dev.send.api.strategy.domain.StrategyDocument;
+import dev.send.api.worker.application.StrategySimulationConfig;
 import dev.send.api.worker.application.StrategyWorkerPayloadMapper;
 import jakarta.annotation.PreDestroy;
 
@@ -66,12 +67,26 @@ public class OcamlWorkerClient {
         return new OcamlExecutionRequest("execute_graph", strategyWorkerPayloadMapper.toWorkerPayload(strategyDocument));
     }
 
+    public OcamlExecutionRequest createSimulateRequest(
+            StrategyDocument strategyDocument,
+            StrategySimulationConfig simulationConfig) {
+        return new OcamlExecutionRequest(
+                "simulate_graph",
+                strategyWorkerPayloadMapper.toSimulationPayload(strategyDocument, simulationConfig));
+    }
+
     public OcamlExecutionResponse validateGraph(StrategyDocument strategyDocument) {
         return send(createValidateRequest(strategyDocument));
     }
 
     public OcamlExecutionResponse executeGraph(StrategyDocument strategyDocument) {
         return send(createExecuteRequest(strategyDocument));
+    }
+
+    public OcamlExecutionResponse simulateGraph(
+            StrategyDocument strategyDocument,
+            StrategySimulationConfig simulationConfig) {
+        return send(createSimulateRequest(strategyDocument, simulationConfig));
     }
 
     public String encodeRequest(OcamlExecutionRequest request) {

@@ -1,11 +1,18 @@
+x-db-name: &db-name send
+x-db-user: &db-user send_user
+x-db-password: &db-password change_me
+x-db-host: &db-host send-db
+x-db-port: &db-port "5432"
+x-jdbc-url: &jdbc-url jdbc:postgresql://send-db:5432/send
+
 services:
   send-db:
     image: timescale/timescaledb:latest-pg16
     container_name: send-db
     environment:
-      POSTGRES_DB: send
-      POSTGRES_USER: send_user
-      POSTGRES_PASSWORD: change_me
+      POSTGRES_DB: *db-name
+      POSTGRES_USER: *db-user
+      POSTGRES_PASSWORD: *db-password
     ports:
       - "5432:5432"
     volumes:
@@ -22,10 +29,18 @@ services:
       dockerfile: ./backend/Dockerfile
     environment:
       OCAML_WORKER_COMMAND: /app/worker
-      SPRING_DATASOURCE_URL: jdbc:postgresql://send-db:5432/send
-      SPRING_DATASOURCE_USERNAME: send_user
-      SPRING_DATASOURCE_PASSWORD: change_me
+      SPRING_DATASOURCE_URL: *jdbc-url
+      SPRING_DATASOURCE_USERNAME: *db-user
+      SPRING_DATASOURCE_PASSWORD: *db-password
+      PGHOST: *db-host
+      PGPORT: *db-port
+      PGDATABASE: *db-name
+      PGUSER: *db-user
+      PGPASSWORD: *db-password
       SERVER_PORT: "8080"
+      DATABASE_BOOTSTRAP_DATA_DIRECTORY: /app/data
+    volumes:
+      - ./data:/app/data:ro
     ports:
       - "9119:8080"
     depends_on:

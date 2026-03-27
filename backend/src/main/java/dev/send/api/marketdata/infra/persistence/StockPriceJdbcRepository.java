@@ -2,6 +2,7 @@ package dev.send.api.marketdata.infra.persistence;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -28,6 +29,11 @@ public class StockPriceJdbcRepository {
             WHERE symbol = ?
             """;
 
+    private static final String FIND_GLOBAL_PRICE_COVERAGE_SQL = """
+            SELECT MIN(time) AS earliest_time, MAX(time) AS latest_time
+            FROM stock_prices
+            """;
+
     private final JdbcTemplate jdbcTemplate;
 
     public StockPriceJdbcRepository(JdbcTemplate jdbcTemplate) {
@@ -52,5 +58,19 @@ public class StockPriceJdbcRepository {
                         Timestamp.class,
                         symbol))
                 .map(Timestamp::toInstant);
+    }
+
+    public Optional<PriceCoverage> findGlobalPriceCoverage() {
+        Map<String, Object> row = jdbcTemplate.queryForMap(FIND_GLOBAL_PRICE_COVERAGE_SQL);
+        Object earliest = row.get("earliest_time");
+        Object latest = row.get("latest_time");
+        if (!(earliest instanceof Timestamp earliestTimestamp) || !(latest instanceof Timestamp latestTimestamp)) {
+            return Optional.empty();
+        }
+
+        return Optional.of(new PriceCoverage(earliestTimestamp.toInstant(), latestTimestamp.toInstant()));
+    }
+
+    public record PriceCoverage(Instant earliestTime, Instant latestTime) {
     }
 }

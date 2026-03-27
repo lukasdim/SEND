@@ -1,6 +1,7 @@
 type command =
   | Validate_graph
   | Execute_graph
+  | Simulate_graph
 
 type request = {
   command : command;

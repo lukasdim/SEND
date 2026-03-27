@@ -1,6 +1,7 @@
 type command =
   | Validate_graph
   | Execute_graph
+  | Simulate_graph
 
 type request = {
   command : command;
@@ -28,6 +29,7 @@ type response =
 let command_to_string = function
   | Validate_graph -> "validate_graph"
   | Execute_graph -> "execute_graph"
+  | Simulate_graph -> "simulate_graph"
 
 let error_code = function
   | Invalid_json _ -> "invalid_json"
@@ -44,6 +46,7 @@ let error_message = function
 let command_of_string = function
   | "validate_graph" -> Ok Validate_graph
   | "execute_graph" -> Ok Execute_graph
+  | "simulate_graph" -> Ok Simulate_graph
   | command -> Error (Unknown_command command)
 
 let decode_request line =

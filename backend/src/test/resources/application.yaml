@@ -10,6 +10,9 @@ spring:
     hibernate:
       ddl-auto: create-drop
 
+database-bootstrap:
+  enabled: false
+
 market-data:
   bootstrap-tracked-symbols: []
   scheduler:
@@ -21,3 +24,7 @@ market-data:
       enabled: false
       cron: "0 0 6 * * MON-FRI"
       zone: "America/New_York"
+
+strategy:
+  rate-limit:
+    simulation-cooldown-ms: 5000

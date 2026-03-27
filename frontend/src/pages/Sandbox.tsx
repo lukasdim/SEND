@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import ReactFlow, {
   Background,
   type Connection,
@@ -19,6 +20,7 @@ import {
   createEmptyNodeRegistry,
   createNodeRegistry,
   isMathNodeType,
+  type NodeIssueSeverity,
   type JsonScalar,
   type NodeData,
   type NodeErrorState,
@@ -46,7 +48,17 @@ import {
   SANDBOX_NOTIFICATION_TIMEOUT_MS,
   SANDBOX_STRATEGIES_API,
 } from "../config/sandboxConfig";
-import { fetchNodeIoCatalog, testStrategy, type ApiError } from "../services/api";
+import {
+  fetchSimulationBounds,
+  fetchNodeIoCatalog,
+  simulateStrategy,
+  type ApiError,
+  type StrategySimulationConfig,
+  type StrategySimulationBounds,
+  type StrategySimulationResult,
+  type StrategySimulationTraceDay,
+  type StrategySimulationTradeEvent,
+} from "../services/api";
 
 type StrategySummary = {
   id: string;
@@ -87,6 +99,45 @@ type FrontendGraphPayload = {
   nodes: Node[];
   edges: Edge[];
 };
+
+type ReplayGraphSnapshot = {
+  nodes: Node<NodeData>[];
+  edges: Edge[];
+};
+
+type ReplayMode = "edit" | "replay";
+
+type ReplayDayStatus = "normal" | "warning" | "error";
+
+type ReplayPosition = {
+  ticker: string;
+  quantity: number;
+  averageCost: number;
+};
+
+type ReplayDayModel = {
+  index: number;
+  date: string;
+  status: ReplayDayStatus;
+  dailyPnl: number;
+  dotMarkers: string[];
+  runtimeResults: Record<string, NodeRuntimeResult>;
+  changedNodeIds: Set<string>;
+  changedNodeCount: number;
+  changedOutputCount: number;
+  trace: StrategySimulationTraceDay;
+  positions: ReplayPosition[];
+  previewLines: string[];
+};
+
+type ReplaySession = {
+  graphSnapshot: ReplayGraphSnapshot;
+  graphSignature: string;
+  result: StrategySimulationResult;
+  replayDays: ReplayDayModel[];
+};
+
+const STRATEGY_TEST_COOLDOWN_MS = 5000;
 
 type PaletteDragState = {
   nodeType: string;
@@ -145,13 +196,262 @@ function isApiError(value: unknown): value is ApiError {
   );
 }
 
+function toUtcDate(value: string): Date {
+  const [yearText, monthText, dayText] = value.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function formatIsoDate(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addUtcDays(date: Date, days: number): Date {
+  const nextDate = new Date(date.getTime());
+  nextDate.setUTCDate(nextDate.getUTCDate() + days);
+  return nextDate;
+}
+
+function addUtcMonths(date: Date, months: number): Date {
+  const nextDate = new Date(date.getTime());
+  const targetDay = nextDate.getUTCDate();
+  nextDate.setUTCDate(1);
+  nextDate.setUTCMonth(nextDate.getUTCMonth() + months);
+  const lastDayOfTargetMonth = new Date(
+    Date.UTC(nextDate.getUTCFullYear(), nextDate.getUTCMonth() + 1, 0)
+  ).getUTCDate();
+  nextDate.setUTCDate(Math.min(targetDay, lastDayOfTargetMonth));
+  return nextDate;
+}
+
+function startOfUtcMonth(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+function isWeekendIsoDate(value: string): boolean {
+  return isWeekendDate(toUtcDate(value));
+}
+
+function isWeekendDate(date: Date): boolean {
+  const weekday = date.getUTCDay();
+  return weekday === 0 || weekday === 6;
+}
+
+function clampToWeekday(date: Date, direction: -1 | 1): Date {
+  let nextDate = new Date(date.getTime());
+  while (isWeekendDate(nextDate)) {
+    nextDate = addUtcDays(nextDate, direction);
+  }
+  return nextDate;
+}
+
+function formatDisplayDate(value: string): string {
+  return toUtcDate(value).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function formatDisplayMonth(date: Date): string {
+  return date.toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function formatShortWeekday(date: Date): string {
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    timeZone: "UTC",
+  });
+}
+
+function formatCurrency(value: number): string {
+  return value.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatSignedCurrency(value: number): string {
+  const formatted = formatCurrency(Math.abs(value));
+  if (value > 0) return `+${formatted}`;
+  if (value < 0) return `-${formatted}`;
+  return formatCurrency(0);
+}
+
+function formatSignedNumber(value: number): string {
+  const formatted = value.toLocaleString(undefined, {
+    minimumFractionDigits: value % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+  if (value > 0) return `+${formatted}`;
+  return formatted;
+}
+
+function getLatestWeekday(): string {
+  const now = new Date();
+  const todayUtc = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  return formatIsoDate(clampToWeekday(todayUtc, -1));
+}
+
+function buildDefaultSimulationConfig(): StrategySimulationConfig {
+  const endDate = getLatestWeekday();
+  const defaultStart = clampToWeekday(addUtcDays(toUtcDate(endDate), -30), -1);
+  return {
+    startDate: formatIsoDate(defaultStart),
+    endDate,
+    initialCash: 10000,
+    includeTrace: true,
+  };
+}
+
+function hasUsableSimulationBounds(
+  bounds: StrategySimulationBounds | null
+): bounds is StrategySimulationBounds & { earliestPriceDate: string; latestPriceDate: string } {
+  return Boolean(bounds?.hasPriceData && bounds.earliestPriceDate && bounds.latestPriceDate);
+}
+
+function clampIsoDateWithinRange(value: string, minDate?: string, maxDate?: string): string {
+  let nextValue = value;
+
+  if (minDate && toUtcDate(nextValue).getTime() < toUtcDate(minDate).getTime()) {
+    nextValue = minDate;
+  }
+
+  if (maxDate && toUtcDate(nextValue).getTime() > toUtcDate(maxDate).getTime()) {
+    nextValue = maxDate;
+  }
+
+  return nextValue;
+}
+
+function toSimulationRangeLimit(
+  startDate: string,
+  bounds: StrategySimulationBounds | null
+): string {
+  const sixMonthLimit = formatIsoDate(clampToWeekday(addUtcMonths(toUtcDate(startDate), 6), -1));
+  if (!hasUsableSimulationBounds(bounds)) {
+    return sixMonthLimit;
+  }
+
+  return toUtcDate(sixMonthLimit).getTime() < toUtcDate(bounds.latestPriceDate).getTime()
+    ? sixMonthLimit
+    : bounds.latestPriceDate;
+}
+
+function buildSimulationConfigFromBounds(
+  bounds: StrategySimulationBounds,
+  initialCash = 10000
+): StrategySimulationConfig {
+  if (!hasUsableSimulationBounds(bounds)) {
+    return {
+      ...buildDefaultSimulationConfig(),
+      initialCash,
+    };
+  }
+
+  const endDate = bounds.latestPriceDate;
+  const suggestedStart = formatIsoDate(clampToWeekday(addUtcDays(toUtcDate(endDate), -30), -1));
+  const startDate =
+    toUtcDate(suggestedStart).getTime() < toUtcDate(bounds.earliestPriceDate).getTime()
+      ? bounds.earliestPriceDate
+      : suggestedStart;
+
+  return {
+    startDate,
+    endDate,
+    initialCash,
+    includeTrace: true,
+  };
+}
+
+function adjustSimulationRange(
+  config: StrategySimulationConfig,
+  bounds: StrategySimulationBounds | null = null
+): StrategySimulationConfig {
+  let startDate = clampIsoDateWithinRange(
+    isWeekendIsoDate(config.startDate) ? formatIsoDate(clampToWeekday(toUtcDate(config.startDate), -1)) : config.startDate,
+    hasUsableSimulationBounds(bounds) ? bounds.earliestPriceDate : undefined,
+    hasUsableSimulationBounds(bounds) ? bounds.latestPriceDate : undefined
+  );
+  let endDate = clampIsoDateWithinRange(
+    isWeekendIsoDate(config.endDate) ? formatIsoDate(clampToWeekday(toUtcDate(config.endDate), -1)) : config.endDate,
+    hasUsableSimulationBounds(bounds) ? bounds.earliestPriceDate : undefined,
+    hasUsableSimulationBounds(bounds) ? bounds.latestPriceDate : undefined
+  );
+
+  if (toUtcDate(endDate).getTime() < toUtcDate(startDate).getTime()) {
+    endDate = startDate;
+  }
+
+  const maxEndDate = toSimulationRangeLimit(startDate, bounds);
+  if (toUtcDate(endDate).getTime() > toUtcDate(maxEndDate).getTime()) {
+    endDate = maxEndDate;
+  }
+
+  return {
+    ...config,
+    startDate,
+    endDate,
+  };
+}
+
+function validateSimulationConfig(
+  config: StrategySimulationConfig,
+  bounds: StrategySimulationBounds | null = null
+): string | null {
+  if (bounds && !bounds.hasPriceData) {
+    return "Simulation is unavailable until stock price data is loaded.";
+  }
+  if (bounds && hasUsableSimulationBounds(bounds) === false) {
+    return "Simulation date bounds could not be loaded.";
+  }
+  if (!config.startDate || !config.endDate) {
+    return "Choose a start and end date before running the simulation.";
+  }
+  if (isWeekendIsoDate(config.startDate) || isWeekendIsoDate(config.endDate)) {
+    return "Start and end dates must be weekdays.";
+  }
+  if (
+    hasUsableSimulationBounds(bounds) &&
+    (toUtcDate(config.startDate).getTime() < toUtcDate(bounds.earliestPriceDate).getTime() ||
+      toUtcDate(config.endDate).getTime() > toUtcDate(bounds.latestPriceDate).getTime())
+  ) {
+    return `Simulation dates must stay between ${formatDisplayDate(bounds.earliestPriceDate)} and ${formatDisplayDate(bounds.latestPriceDate)}.`;
+  }
+  if (toUtcDate(config.endDate).getTime() < toUtcDate(config.startDate).getTime()) {
+    return "End date must be on or after the start date.";
+  }
+  if (toUtcDate(config.endDate).getTime() > addUtcMonths(toUtcDate(config.startDate), 6).getTime()) {
+    return "Simulations are limited to a maximum six-month range right now.";
+  }
+  if (!Number.isFinite(config.initialCash) || config.initialCash < 0) {
+    return "Initial cash must be a non-negative number.";
+  }
+  return null;
+}
+
 function stripRuntimeResults(nodes: Node[]): Node[] {
   return nodes.map((node) => {
-    if (!isRecord(node.data) || !("runtimeResult" in node.data)) {
+    if (!isRecord(node.data) || (!("runtimeResult" in node.data) && !("runtimeResultMeta" in node.data))) {
       return node;
     }
 
-    const { runtimeResult: _runtimeResult, ...rest } = node.data as NodeData;
+    const {
+      runtimeResult: _runtimeResult,
+      runtimeResultMeta: _runtimeResultMeta,
+      ...rest
+    } = node.data as NodeData;
     return {
       ...node,
       data: rest,
@@ -192,21 +492,6 @@ function clearNodeIssueById(nodes: Node[], nodeId: string): Node[] {
   });
 }
 
-function mergeRuntimeResults(nodes: Node[], results: Record<string, NodeRuntimeResult>): Node[] {
-  return nodes.map((node) => {
-    const result = results[node.id];
-    if (!result) return node;
-    const nodeData = node.data as NodeData;
-    return {
-      ...node,
-      data: {
-        ...nodeData,
-        runtimeResult: result,
-      },
-    };
-  });
-}
-
 function formatLastEdited(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -223,6 +508,24 @@ function formatFallbackErrorMessage(error: unknown, fallbackMessage: string): st
   }
 
   return fallbackMessage;
+}
+
+function parseRetryAfterMs(error: unknown): number | null {
+  if (!isApiError(error)) return null;
+
+  for (const detail of error.details) {
+    const match = detail.match(/^retryAfterMs=(\d+)$/);
+    if (match) {
+      return Number(match[1]);
+    }
+  }
+
+  return null;
+}
+
+function formatCooldownSeconds(remainingMs: number): string {
+  const remainingSeconds = Math.max(1, Math.ceil(remainingMs / 1000));
+  return `${remainingSeconds}s`;
 }
 
 function humanizePortName(portName: string | undefined, portIndex: number | undefined): string {
@@ -443,6 +746,358 @@ function materializeInlineMathInputs(nodes: Node[], edges: Edge[]): FrontendGrap
     nodes: nodes.concat(generatedNodes),
     edges: edges.concat(generatedEdges),
   };
+}
+
+function cloneReplayGraphSnapshot(graph: FrontendGraphPayload): ReplayGraphSnapshot {
+  return {
+    nodes: graph.nodes.map((node) => {
+      const nodeData = node.data as NodeData;
+      return {
+        ...node,
+        selected: false,
+        data: {
+          ...nodeData,
+          runtimeResult: undefined,
+          runtimeResultMeta: undefined,
+          errorState: undefined,
+          readOnly: true,
+        },
+      } as Node<NodeData>;
+    }),
+    edges: graph.edges.map((edge) => ({
+      ...edge,
+      selected: false,
+    })),
+  };
+}
+
+function serializeGraphSignature(graph: FrontendGraphPayload): string {
+  return JSON.stringify(buildBackendGraphPayload(graph));
+}
+
+function summarizeOutputValue(value: JsonScalar): string {
+  if (typeof value === "number") {
+    return value.toLocaleString(undefined, {
+      maximumFractionDigits: 2,
+    });
+  }
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  if (value === null) {
+    return "null";
+  }
+  return String(value);
+}
+
+function createReplayPreviewLines(
+  traceDay: StrategySimulationTraceDay,
+  nodeNameById: Map<string, string>
+): string[] {
+  const nextLines: string[] = [];
+
+  for (const nodeChange of traceDay.nodeChanges) {
+    const outputEntries = Object.entries(nodeChange.outputs);
+    if (outputEntries.length === 0) continue;
+    const [firstOutputKey, firstOutputValue] = outputEntries[0];
+    const nodeLabel = nodeNameById.get(nodeChange.nodeId) ?? nodeChange.nodeId;
+    nextLines.push(`${nodeLabel}: ${firstOutputKey} = ${summarizeOutputValue(firstOutputValue)}`);
+    if (nextLines.length >= 4) break;
+  }
+
+  if (nextLines.length === 0 && traceDay.trades.length > 0) {
+    for (const trade of traceDay.trades.slice(0, 4)) {
+      nextLines.push(
+        `${trade.action.toUpperCase()} ${trade.ticker}: ${formatSignedNumber(trade.filledShares)} @ ${formatCurrency(trade.fillPrice)}`
+      );
+    }
+  }
+
+  if (nextLines.length === 0 && traceDay.errors.length > 0) {
+    return traceDay.errors.slice(0, 3);
+  }
+
+  if (nextLines.length === 0 && traceDay.warnings.length > 0) {
+    return traceDay.warnings.slice(0, 3);
+  }
+
+  if (nextLines.length === 0) {
+    return ["No node output values changed from the previous day."];
+  }
+
+  return nextLines;
+}
+
+function createReplayDotMarkers(traceDay: StrategySimulationTraceDay): string[] {
+  const nextMarkers: string[] = [];
+  const hasBuy = traceDay.trades.some((trade) => trade.action.toLowerCase() === "buy");
+  const hasSell = traceDay.trades.some((trade) => trade.action.toLowerCase() === "sell");
+  const hasWarning = traceDay.warnings.length > 0;
+
+  if (hasBuy) {
+    nextMarkers.push("B");
+  }
+
+  if (hasSell) {
+    nextMarkers.push("S");
+  }
+
+  if (hasWarning) {
+    nextMarkers.push("!");
+  }
+
+  return nextMarkers;
+}
+
+function applyTradeToReplayPositions(
+  positionsByTicker: Map<string, ReplayPosition>,
+  trade: StrategySimulationTradeEvent
+): void {
+  const action = trade.action.toLowerCase();
+  const existing = positionsByTicker.get(trade.ticker);
+
+  if (action === "buy") {
+    const existingQuantity = existing?.quantity ?? 0;
+    const existingAverageCost = existing?.averageCost ?? 0;
+    const nextQuantity = existingQuantity + trade.filledShares;
+    const nextAverageCost =
+      nextQuantity <= 0
+        ? trade.fillPrice
+        : ((existingQuantity * existingAverageCost) + trade.filledShares * trade.fillPrice) / nextQuantity;
+
+    positionsByTicker.set(trade.ticker, {
+      ticker: trade.ticker,
+      quantity: nextQuantity,
+      averageCost: nextAverageCost,
+    });
+    return;
+  }
+
+  if (action === "sell" && existing) {
+    const nextQuantity = Math.max(0, existing.quantity - trade.filledShares);
+    if (nextQuantity <= 0.0000001) {
+      positionsByTicker.delete(trade.ticker);
+      return;
+    }
+
+    positionsByTicker.set(trade.ticker, {
+      ...existing,
+      quantity: nextQuantity,
+    });
+  }
+}
+
+function sortReplayPositions(positions: ReplayPosition[]): ReplayPosition[] {
+  return [...positions].sort((left, right) => left.ticker.localeCompare(right.ticker));
+}
+
+function buildReplayDays(
+  result: StrategySimulationResult,
+  graphSnapshot: ReplayGraphSnapshot
+): ReplayDayModel[] {
+  const nodeNameById = new Map(
+    graphSnapshot.nodes.map((node) => [node.id, (node.data as NodeData).displayName ?? node.id])
+  );
+  const cumulativeRuntimeResults: Record<string, NodeRuntimeResult> = {};
+  const positionsByTicker = new Map<string, ReplayPosition>();
+
+  return result.trace.map((traceDay, index) => {
+    const changedNodeIds = new Set<string>();
+    let changedOutputCount = 0;
+
+    for (const nodeChange of traceDay.nodeChanges) {
+      changedNodeIds.add(nodeChange.nodeId);
+      cumulativeRuntimeResults[nodeChange.nodeId] = {
+        ...(cumulativeRuntimeResults[nodeChange.nodeId] ?? {}),
+        ...nodeChange.outputs,
+      };
+      changedOutputCount += Object.keys(nodeChange.outputs).length;
+    }
+
+    for (const trade of traceDay.trades) {
+      applyTradeToReplayPositions(positionsByTicker, trade);
+    }
+
+    const runtimeResults = Object.fromEntries(
+      Object.entries(cumulativeRuntimeResults).map(([nodeId, outputs]) => [nodeId, { ...outputs }])
+    );
+
+    return {
+      index,
+      date: traceDay.date,
+      status:
+        traceDay.errors.length > 0
+          ? "error"
+          : traceDay.warnings.length > 0
+            ? "warning"
+            : "normal",
+      dailyPnl: traceDay.balanceSnapshot.realizedPnl + traceDay.balanceSnapshot.unrealizedPnl,
+      dotMarkers: createReplayDotMarkers(traceDay),
+      runtimeResults,
+      changedNodeIds,
+      changedNodeCount: changedNodeIds.size,
+      changedOutputCount,
+      trace: traceDay,
+      positions: sortReplayPositions([...positionsByTicker.values()]),
+      previewLines: createReplayPreviewLines(traceDay, nodeNameById),
+    };
+  });
+}
+
+function stripReplayIssuePrefix(message: string): string {
+  const warningPrefixMatch = message.match(/^\d{4}-\d{2}-\d{2} \[[^\]]+\] (.+)$/);
+  if (warningPrefixMatch) {
+    return warningPrefixMatch[1] ?? message;
+  }
+
+  return message;
+}
+
+function extractReplayIssueNodeId(message: string): string | null {
+  const warningMatch = message.match(/^\d{4}-\d{2}-\d{2} \[([^\]]+)\]/);
+  if (warningMatch?.[1]) {
+    return warningMatch[1];
+  }
+
+  const engineMatch = message.match(/\bnode ([^:\s]+)(?::|\b)/i);
+  if (engineMatch?.[1]) {
+    return engineMatch[1];
+  }
+
+  return null;
+}
+
+function buildReplayNodeIssueMap(traceDay: StrategySimulationTraceDay): Map<string, NodeErrorState> {
+  const issuesByNodeId = new Map<
+    string,
+    {
+      severity: NodeIssueSeverity;
+      summary: string;
+      details: string[];
+    }
+  >();
+
+  const registerIssue = (severity: NodeIssueSeverity, rawMessage: string) => {
+    const nodeId = extractReplayIssueNodeId(rawMessage);
+    if (!nodeId) return;
+
+    const cleanedMessage = stripReplayIssuePrefix(rawMessage);
+    const existing = issuesByNodeId.get(nodeId);
+    if (!existing) {
+      issuesByNodeId.set(nodeId, {
+        severity,
+        summary: cleanedMessage,
+        details: [cleanedMessage],
+      });
+      return;
+    }
+
+    const nextSeverity = existing.severity === "error" || severity === "error" ? "error" : "warning";
+    const nextDetails = existing.details.includes(cleanedMessage)
+      ? existing.details
+      : [...existing.details, cleanedMessage];
+
+    issuesByNodeId.set(nodeId, {
+      severity: nextSeverity,
+      summary: existing.severity === "error" ? existing.summary : cleanedMessage,
+      details: nextDetails,
+    });
+  };
+
+  for (const warning of traceDay.warnings) {
+    registerIssue("warning", warning);
+  }
+
+  for (const error of traceDay.errors) {
+    registerIssue("error", error);
+  }
+
+  return new Map(
+    [...issuesByNodeId.entries()].map(([nodeId, issue]) => [
+      nodeId,
+      {
+        severity: issue.severity,
+        summary: issue.summary,
+        details: issue.details,
+      } satisfies NodeErrorState,
+    ])
+  );
+}
+
+function estimateReplayNodeHeight(node: Node<NodeData>): number {
+  const nodeData = node.data as NodeData;
+  let height = 92;
+
+  if ((nodeData.dataFields?.length ?? 0) > 0) {
+    height += nodeData.dataFields.length * 50;
+  }
+
+  if (isMathNodeType(nodeData.nodeType) && (nodeData.inputs?.length ?? 0) > 0) {
+    height += nodeData.inputs.length * 42;
+  }
+
+  if (nodeData.errorState) {
+    height += 94 + (nodeData.errorState.details?.length ?? 0) * 18;
+  }
+
+  if (nodeData.runtimeResult && Object.keys(nodeData.runtimeResult).length > 0) {
+    const runtimeLineCount = JSON.stringify(nodeData.runtimeResult, null, 2).split("\n").length;
+    height += 78 + runtimeLineCount * 14;
+  }
+
+  return height;
+}
+
+function applyReplayNodeSpacing(nodes: Node<NodeData>[]): Node<NodeData>[] {
+  const horizontalPadding = 24;
+  const verticalPadding = 28;
+  const estimatedWidth = 232;
+  const halfWidth = estimatedWidth / 2;
+  const placedBoxes: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+  const positionedNodes = new Map<string, Node<NodeData>>();
+
+  const sortedNodes = [...nodes].sort((left, right) =>
+    left.position.y === right.position.y ? left.position.x - right.position.x : left.position.y - right.position.y
+  );
+
+  for (const node of sortedNodes) {
+    const height = estimateReplayNodeHeight(node);
+    let y = node.position.y;
+    let top = y - height / 2;
+    let bottom = y + height / 2;
+    const left = node.position.x - halfWidth;
+    const right = node.position.x + halfWidth;
+    let hasOverlap = true;
+
+    while (hasOverlap) {
+      hasOverlap = false;
+
+      for (const box of placedBoxes) {
+        const overlapsHorizontally = left < box.right + horizontalPadding && right > box.left - horizontalPadding;
+        const overlapsVertically = top < box.bottom + verticalPadding && bottom > box.top - verticalPadding;
+
+        if (overlapsHorizontally && overlapsVertically) {
+          y = box.bottom + verticalPadding + height / 2;
+          top = y - height / 2;
+          bottom = y + height / 2;
+          hasOverlap = true;
+        }
+      }
+    }
+
+    const positionedNode = {
+      ...node,
+      position: {
+        ...node.position,
+        y,
+      },
+    };
+
+    positionedNodes.set(node.id, positionedNode);
+    placedBoxes.push({ left, right, top, bottom });
+  }
+
+  return nodes.map((node) => positionedNodes.get(node.id) ?? node);
 }
 
 function NodeTemplatePreview({
@@ -741,6 +1396,694 @@ function ErrorBanner({
   );
 }
 
+function CalendarDateField({
+  label,
+  value,
+  onChange,
+  minDate,
+  maxDate,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  minDate?: string;
+  maxDate?: string;
+  disabled?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [viewMonth, setViewMonth] = useState(() => startOfUtcMonth(toUtcDate(value)));
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const popupRef = useRef<HTMLDivElement | null>(null);
+  const [popupPosition, setPopupPosition] = useState({ top: 0, left: 0, width: 320, transformOrigin: "top left" });
+
+  useEffect(() => {
+    setViewMonth(startOfUtcMonth(toUtcDate(value)));
+  }, [value]);
+
+  const days = useMemo(() => {
+    const firstVisibleDate = addUtcDays(startOfUtcMonth(viewMonth), -startOfUtcMonth(viewMonth).getUTCDay());
+    return Array.from({ length: 42 }, (_, index) => addUtcDays(firstVisibleDate, index));
+  }, [viewMonth]);
+
+  const minTime = minDate ? toUtcDate(minDate).getTime() : Number.NEGATIVE_INFINITY;
+  const maxTime = maxDate ? toUtcDate(maxDate).getTime() : Number.POSITIVE_INFINITY;
+
+  const updatePopupPosition = useCallback(() => {
+    const button = buttonRef.current;
+    if (!button) return;
+
+    const viewportPadding = 16;
+    const buttonRect = button.getBoundingClientRect();
+    const popupWidth = Math.min(320, window.innerWidth - viewportPadding * 2);
+    const measuredHeight = popupRef.current?.offsetHeight ?? 360;
+    const spaceBelow = window.innerHeight - buttonRect.bottom - viewportPadding;
+    const shouldOpenAbove = spaceBelow < measuredHeight && buttonRect.top > measuredHeight + 8;
+    const unclampedLeft = buttonRect.left;
+    const left = Math.min(
+      Math.max(viewportPadding, unclampedLeft),
+      Math.max(viewportPadding, window.innerWidth - popupWidth - viewportPadding)
+    );
+    const top = shouldOpenAbove
+      ? Math.max(viewportPadding, buttonRect.top - measuredHeight - 8)
+      : Math.min(window.innerHeight - measuredHeight - viewportPadding, buttonRect.bottom + 8);
+
+    setPopupPosition({
+      top,
+      left,
+      width: popupWidth,
+      transformOrigin: shouldOpenAbove ? "bottom left" : "top left",
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    updatePopupPosition();
+  }, [isOpen, updatePopupPosition, viewMonth]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleViewportChange = () => updatePopupPosition();
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      if (buttonRef.current?.contains(target) || popupRef.current?.contains(target)) {
+        return;
+      }
+      setIsOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, updatePopupPosition]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, position: "relative" }}>
+      <div
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: UI_TEXT_SECONDARY,
+        }}
+      >
+        {label}
+      </div>
+      <button
+        ref={buttonRef}
+        type="button"
+        disabled={disabled}
+        onClick={() => setIsOpen((current) => !current)}
+        style={{
+          ...toolbarButtonStyle,
+          textAlign: "left",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          cursor: disabled ? "not-allowed" : "pointer",
+          opacity: disabled ? 0.65 : 1,
+          minWidth: 0,
+        }}
+      >
+        <span
+          style={{
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {formatDisplayDate(value)}
+        </span>
+        <span style={{ color: UI_TEXT_SECONDARY, fontSize: 11 }}>{isOpen ? "Close" : "Pick"}</span>
+      </button>
+
+      {isOpen &&
+        !disabled &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 60,
+              pointerEvents: "none",
+            }}
+          >
+            <div
+              ref={popupRef}
+              style={{
+                position: "fixed",
+                top: popupPosition.top,
+                left: popupPosition.left,
+                width: popupPosition.width,
+                zIndex: 61,
+                padding: 10,
+                border: `1px solid ${UI_BORDER_SUBTLE}`,
+                borderRadius: 10,
+                background: UI_CARD,
+                boxShadow: "0 14px 28px rgba(0, 0, 0, 0.24)",
+                animation: "calendarBubbleIn 180ms cubic-bezier(0.2, 0.9, 0.2, 1)",
+                transformOrigin: popupPosition.transformOrigin,
+                pointerEvents: "auto",
+              }}
+            >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              marginBottom: 10,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setViewMonth((current) => startOfUtcMonth(addUtcMonths(current, -1)))}
+              style={smallGhostButtonStyle}
+            >
+              Prev
+            </button>
+            <div style={{ fontSize: 12, fontWeight: 700, color: UI_TEXT_PRIMARY }}>
+              {formatDisplayMonth(viewMonth)}
+            </div>
+            <button
+              type="button"
+              onClick={() => setViewMonth((current) => startOfUtcMonth(addUtcMonths(current, 1)))}
+              style={smallGhostButtonStyle}
+            >
+              Next
+            </button>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+              gap: 6,
+              marginBottom: 6,
+            }}
+          >
+            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+              <div
+                key={day}
+                style={{
+                  fontSize: 10,
+                  textAlign: "center",
+                  color: UI_TEXT_SECONDARY,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                }}
+              >
+                {day}
+              </div>
+            ))}
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+              gap: 6,
+            }}
+          >
+            {days.map((day) => {
+              const isoDate = formatIsoDate(day);
+              const isCurrentMonth = day.getUTCMonth() === viewMonth.getUTCMonth();
+              const isSelected = isoDate === value;
+              const isWeekend = isWeekendDate(day);
+              const isOutOfRange = day.getTime() < minTime || day.getTime() > maxTime;
+              const isDisabled = isWeekend || isOutOfRange;
+
+              return (
+                <button
+                  key={isoDate}
+                  type="button"
+                  disabled={isDisabled}
+                  onClick={() => {
+                    onChange(isoDate);
+                    setIsOpen(false);
+                  }}
+                  title={`${formatShortWeekday(day)} ${formatDisplayDate(isoDate)}`}
+                  style={{
+                    height: 30,
+                    borderRadius: 8,
+                    border: `1px solid ${
+                      isSelected ? UI_ACCENT : isWeekend ? withAlpha(UI_BORDER_STRONG, 0.6) : UI_BORDER_SUBTLE
+                    }`,
+                    background: isSelected
+                      ? withAlpha(UI_ACCENT, 0.22)
+                      : isWeekend
+                        ? withAlpha(UI_TEXT_SECONDARY, 0.08)
+                        : UI_ELEVATED,
+                    color: !isCurrentMonth
+                      ? withAlpha(UI_TEXT_SECONDARY, 0.45)
+                      : isDisabled
+                        ? withAlpha(UI_TEXT_SECONDARY, 0.55)
+                        : UI_TEXT_PRIMARY,
+                    fontSize: 11,
+                    fontWeight: isSelected ? 700 : 500,
+                    cursor: isDisabled ? "not-allowed" : "pointer",
+                    opacity: isCurrentMonth ? 1 : 0.72,
+                  }}
+                >
+                  {day.getUTCDate()}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ marginTop: 8, fontSize: 11, color: UI_TEXT_SECONDARY }}>
+            Weekends are unavailable for simulations.
+          </div>
+            </div>
+          </div>,
+          document.body
+        )}
+    </div>
+  );
+}
+
+function ReplayTimeline({
+  session,
+  mode,
+  activeDayIndex,
+  hoveredDayIndex,
+  selectedDayIndex,
+  highlight,
+  onEnterReplay,
+  onExitReplay,
+  onHoverDay,
+  onLeaveDay,
+  onSelectDay,
+}: {
+  session: ReplaySession;
+  mode: ReplayMode;
+  activeDayIndex: number;
+  hoveredDayIndex: number | null;
+  selectedDayIndex: number;
+  highlight: boolean;
+  onEnterReplay: () => void;
+  onExitReplay: () => void;
+  onHoverDay: (index: number) => void;
+  onLeaveDay: () => void;
+  onSelectDay: (index: number) => void;
+}) {
+  const activeDay = session.replayDays[activeDayIndex];
+  const activeDayPnl = activeDay.dailyPnl;
+  const timelineScrollRef = useRef<HTMLDivElement | null>(null);
+  const [scrollMetrics, setScrollMetrics] = useState({ left: 0, viewportWidth: 0, scrollWidth: 0 });
+
+  const syncScrollMetrics = useCallback(() => {
+    const element = timelineScrollRef.current;
+    if (!element) return;
+
+    setScrollMetrics({
+      left: element.scrollLeft,
+      viewportWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    });
+  }, []);
+
+  useEffect(() => {
+    syncScrollMetrics();
+  }, [session.replayDays.length, syncScrollMetrics]);
+
+  useEffect(() => {
+    const element = timelineScrollRef.current;
+    if (!element) return;
+
+    syncScrollMetrics();
+    const handleScroll = () => syncScrollMetrics();
+    element.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("resize", handleScroll);
+
+    return () => {
+      element.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", handleScroll);
+    };
+  }, [syncScrollMetrics]);
+
+  const maxScrollLeft = Math.max(0, scrollMetrics.scrollWidth - scrollMetrics.viewportWidth);
+  const thumbWidth =
+    scrollMetrics.scrollWidth <= 0 || scrollMetrics.viewportWidth >= scrollMetrics.scrollWidth
+      ? 0
+      : Math.max(44, (scrollMetrics.viewportWidth / scrollMetrics.scrollWidth) * 100);
+  const thumbOffset =
+    maxScrollLeft <= 0 || thumbWidth === 0 ? 0 : (scrollMetrics.left / maxScrollLeft) * (100 - thumbWidth);
+
+  const scrollTimelineToRatio = useCallback((ratio: number) => {
+    const element = timelineScrollRef.current;
+    if (!element) return;
+
+    const boundedRatio = Math.max(0, Math.min(1, ratio));
+    element.scrollTo({ left: boundedRatio * Math.max(0, element.scrollWidth - element.clientWidth) });
+  }, []);
+
+  const onTimelineWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    const element = timelineScrollRef.current;
+    if (!element) return;
+
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    if (delta === 0) return;
+
+    event.preventDefault();
+    element.scrollBy({ left: delta });
+  }, []);
+
+  const onSliderPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (maxScrollLeft <= 0) return;
+      event.preventDefault();
+
+      const track = event.currentTarget;
+      const trackRect = track.getBoundingClientRect();
+      const pointerId = event.pointerId;
+
+      const updateFromClientX = (clientX: number) => {
+        const ratio = (clientX - trackRect.left) / Math.max(trackRect.width, 1);
+        scrollTimelineToRatio(ratio);
+      };
+
+      updateFromClientX(event.clientX);
+      track.setPointerCapture(pointerId);
+
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== pointerId) return;
+        updateFromClientX(moveEvent.clientX);
+      };
+
+      const finish = (finishEvent: PointerEvent) => {
+        if (finishEvent.pointerId !== pointerId) return;
+        if (track.hasPointerCapture(pointerId)) {
+          track.releasePointerCapture(pointerId);
+        }
+        track.removeEventListener("pointermove", handlePointerMove);
+        track.removeEventListener("pointerup", finish);
+        track.removeEventListener("pointercancel", finish);
+        track.removeEventListener("lostpointercapture", finish);
+      };
+
+      track.addEventListener("pointermove", handlePointerMove);
+      track.addEventListener("pointerup", finish);
+      track.addEventListener("pointercancel", finish);
+      track.addEventListener("lostpointercapture", finish);
+    },
+    [maxScrollLeft, scrollTimelineToRatio]
+  );
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        padding: "12px 16px 14px",
+        borderTop: `1px solid ${UI_BORDER_SUBTLE}`,
+        background: UI_PANEL,
+        boxShadow: highlight ? `0 -2px 18px ${withAlpha(UI_ACCENT, 0.36)}` : "none",
+        transition: "box-shadow 180ms ease",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          marginBottom: 10,
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: UI_TEXT_SECONDARY,
+              marginBottom: 2,
+            }}
+          >
+            Replay
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: UI_TEXT_PRIMARY }}>
+            {formatDisplayDate(activeDay.date)} • {activeDay.changedNodeCount} nodes changed
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={mode === "replay" ? onExitReplay : onEnterReplay}
+          style={{
+            ...toolbarButtonStyle,
+            width: "auto",
+            cursor: "pointer",
+            borderColor: mode === "replay" ? UI_ACCENT : UI_BORDER_SUBTLE,
+            background: mode === "replay" ? withAlpha(UI_ACCENT, 0.16) : UI_CARD,
+          }}
+        >
+          {mode === "replay" ? "Back to edit" : "Open Replay View"}
+        </button>
+      </div>
+
+      <div
+        style={{
+          marginBottom: 10,
+          padding: "10px 12px",
+          borderRadius: 10,
+          border: `1px solid ${
+            activeDay.status === "error"
+              ? "#E24B4A"
+              : activeDay.status === "warning"
+                ? "#E8A33B"
+                : UI_BORDER_SUBTLE
+          }`,
+          background:
+            activeDay.status === "error"
+              ? "rgba(226, 75, 74, 0.08)"
+              : activeDay.status === "warning"
+                ? "rgba(232, 163, 59, 0.08)"
+                : UI_CARD,
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+        }}
+      >
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 11, color: UI_TEXT_SECONDARY }}>
+          <span>Equity {formatCurrency(activeDay.trace.balanceSnapshot.equity)}</span>
+          <span>Cash {formatCurrency(activeDay.trace.balanceSnapshot.cash)}</span>
+          <span>Realized {formatSignedCurrency(activeDay.trace.balanceSnapshot.realizedPnl)}</span>
+          <span style={{ color: activeDayPnl >= 0 ? "#6FD58A" : "#F07A7A" }}>
+            Day P/L {formatSignedCurrency(activeDayPnl)}
+          </span>
+        </div>
+        {activeDay.previewLines.length > 0 ? (
+          activeDay.previewLines.map((line) => (
+            <div key={`${activeDay.date}-${line}`} style={{ fontSize: 12, color: UI_TEXT_PRIMARY }}>
+              {line}
+            </div>
+          ))
+        ) : (
+          <div style={{ fontSize: 12, color: UI_TEXT_SECONDARY }}>
+            No node output values changed from the previous day.
+          </div>
+        )}
+      </div>
+
+      <div
+        className="replay-timeline-scroll"
+        ref={timelineScrollRef}
+        onWheel={onTimelineWheel}
+        style={{
+          position: "relative",
+          overflowX: "auto",
+          paddingTop: 8,
+          width: "100%",
+          minWidth: 0,
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            left: 18,
+            right: 18,
+            top: 20,
+            height: 2,
+            background: UI_BORDER_STRONG,
+            opacity: 0.8,
+          }}
+        />
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            minWidth: "max-content",
+            padding: "0 4px",
+          }}
+        >
+          {session.replayDays.map((day) => {
+            const isSelected = day.index === selectedDayIndex;
+            const isHovered = day.index === hoveredDayIndex;
+            const pnlBackground = day.dailyPnl > 0 ? "#2EA66B" : day.dailyPnl < 0 ? "#E24B4A" : UI_TEXT_SECONDARY;
+            const markerCount = day.dotMarkers.length;
+            const markerGroupWidth = markerCount > 1 ? 26 : markerCount === 1 ? 16 : 0;
+            const buttonWidth = Math.max(isHovered || isSelected ? 18 : 14, markerGroupWidth);
+            const background =
+              isSelected
+                ? UI_ACCENT
+                : pnlBackground;
+
+            return (
+              <button
+                key={day.date}
+                type="button"
+                draggable={false}
+                onDragStart={(event) => event.preventDefault()}
+                onMouseEnter={() => onHoverDay(day.index)}
+                onMouseLeave={onLeaveDay}
+                onFocus={() => onHoverDay(day.index)}
+                onBlur={onLeaveDay}
+                onClick={() => onSelectDay(day.index)}
+                title={`${formatDisplayDate(day.date)} � P/L ${formatSignedCurrency(day.dailyPnl)}${
+                  day.dotMarkers.length > 0 ? ` � ${day.dotMarkers.join("/")}` : ""
+                }`}
+                style={{
+                  position: "relative",
+                  width: buttonWidth,
+                  height: isHovered || isSelected ? 18 : 14,
+                  borderRadius: 999,
+                  border: `2px solid ${isHovered ? UI_CARD : background}`,
+                  background,
+                  boxShadow: isSelected ? `0 0 0 4px ${withAlpha(UI_ACCENT, 0.18)}` : "none",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                  transition: "transform 120ms ease, width 120ms ease, height 120ms ease, box-shadow 120ms ease",
+                  transform: isHovered ? "translateY(-2px)" : "translateY(0)",
+                }}
+              >
+                {day.dotMarkers.length > 0 && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 2,
+                      color: UI_CANVAS,
+                      fontSize: day.dotMarkers.length > 1 ? 8 : 9,
+                      fontWeight: 800,
+                      letterSpacing: "0.01em",
+                      lineHeight: 1,
+                      pointerEvents: "none",
+                    }}
+                  >
+                    {day.dotMarkers.map((marker) => (
+                      <span
+                        key={`${day.date}-${marker}`}
+                        style={{
+                          color: marker === "!" ? "#E8A33B" : UI_CANVAS,
+                          textShadow:
+                            "-1px 0 0 #FFFFFF, 1px 0 0 #FFFFFF, 0 -1px 0 #FFFFFF, 0 1px 0 #FFFFFF, -1px -1px 0 #FFFFFF, 1px -1px 0 #FFFFFF, -1px 1px 0 #FFFFFF, 1px 1px 0 #FFFFFF",
+                        }}
+                      >
+                        {marker}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: UI_TEXT_SECONDARY,
+          }}
+        >
+          Scroll
+        </div>
+        <div
+          role="slider"
+          aria-label="Replay timeline scroll"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={maxScrollLeft <= 0 ? 0 : Math.round((scrollMetrics.left / maxScrollLeft) * 100)}
+          draggable={false}
+          onDragStart={(event) => event.preventDefault()}
+          onPointerDown={onSliderPointerDown}
+          style={{
+            position: "relative",
+            flex: 1,
+            height: 18,
+            borderRadius: 999,
+            background: UI_CARD,
+            border: `1px solid ${UI_BORDER_SUBTLE}`,
+            cursor: maxScrollLeft > 0 ? "pointer" : "default",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: "50%",
+              height: 4,
+              transform: "translateY(-50%)",
+              background: withAlpha(UI_BORDER_STRONG, 0.65),
+            }}
+          />
+          {thumbWidth > 0 && (
+            <div
+              style={{
+                position: "absolute",
+                left: `${thumbOffset}%`,
+                top: 1,
+                bottom: 1,
+                width: `${thumbWidth}%`,
+                minWidth: 44,
+                borderRadius: 999,
+                background: withAlpha(UI_ACCENT, 0.8),
+                border: `1px solid ${UI_ACCENT}`,
+                boxShadow: `0 6px 16px ${withAlpha(UI_ACCENT, 0.28)}`,
+                pointerEvents: "none",
+              }}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SandboxInner() {
   const { fitView, getZoom, screenToFlowPosition, setCenter } = useReactFlow();
   const [nodeRegistry, setNodeRegistry] = useState(() => createEmptyNodeRegistry());
@@ -757,7 +2100,21 @@ function SandboxInner() {
   const [isStrategyLoading, setIsStrategyLoading] = useState(false);
   const [isStrategySaving, setIsStrategySaving] = useState(false);
   const [isStrategyTesting, setIsStrategyTesting] = useState(false);
+  const [nextStrategyTestAllowedAt, setNextStrategyTestAllowedAt] = useState(0);
+  const [strategyTestCooldownNow, setStrategyTestCooldownNow] = useState(() => Date.now());
+  const [simulationBounds, setSimulationBounds] = useState<StrategySimulationBounds | null>(null);
+  const [isSimulationBoundsLoading, setIsSimulationBoundsLoading] = useState(true);
+  const [simulationBoundsError, setSimulationBoundsError] = useState("");
+  const [simulationConfig, setSimulationConfig] = useState<StrategySimulationConfig>(() =>
+    buildDefaultSimulationConfig()
+  );
+  const [simulationSession, setSimulationSession] = useState<ReplaySession | null>(null);
+  const [sandboxMode, setSandboxMode] = useState<ReplayMode>("edit");
+  const [selectedReplayDayIndex, setSelectedReplayDayIndex] = useState(0);
+  const [hoveredReplayDayIndex, setHoveredReplayDayIndex] = useState<number | null>(null);
+  const [isReplayTimelineHighlighted, setIsReplayTimelineHighlighted] = useState(false);
   const timeoutRef = useRef<number | null>(null);
+  const replayHighlightTimeoutRef = useRef<number | null>(null);
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
 
   const {
@@ -810,6 +2167,96 @@ function SandboxInner() {
 
   const [nodes, setNodes] = useNodesState(initialNodes);
   const [edges, setEdges] = useEdgesState(initialEdges);
+  const graphDatabase = useMemo(() => {
+    return buildBackendGraphPayload({ nodes, edges });
+  }, [edges, nodes]);
+  const currentDraftGraphSignature = useMemo(
+    () => serializeGraphSignature({ nodes: stripRuntimeResults(clearNodeIssues(nodes)), edges }),
+    [edges, nodes]
+  );
+  const simulationValidationMessage = useMemo(
+    () =>
+      isSimulationBoundsLoading
+        ? "Loading simulation date bounds..."
+        : simulationBoundsError
+          ? "Simulation date bounds could not be loaded."
+          : validateSimulationConfig(simulationConfig, simulationBounds),
+    [isSimulationBoundsLoading, simulationBounds, simulationBoundsError, simulationConfig]
+  );
+  const strategyTestCooldownRemainingMs = Math.max(0, nextStrategyTestAllowedAt - strategyTestCooldownNow);
+  const isStrategyTestCoolingDown = strategyTestCooldownRemainingMs > 0;
+  const strategyTestCooldownLabel = isStrategyTestCoolingDown
+    ? `Try again in ${formatCooldownSeconds(strategyTestCooldownRemainingMs)}`
+    : "";
+  const replayHasDraftChanges = Boolean(
+    simulationSession && simulationSession.graphSignature !== currentDraftGraphSignature
+  );
+  const activeReplayDayIndex =
+    hoveredReplayDayIndex ??
+    Math.min(
+      selectedReplayDayIndex,
+      Math.max((simulationSession?.replayDays.length ?? 1) - 1, 0)
+    );
+  const activeReplayDay = simulationSession?.replayDays[activeReplayDayIndex] ?? null;
+
+  useEffect(() => {
+    if (!isStrategyTestCoolingDown) {
+      setStrategyTestCooldownNow(Date.now());
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setStrategyTestCooldownNow(Date.now());
+    }, 250);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isStrategyTestCoolingDown]);
+
+  const replayNodes = useMemo(() => {
+    if (!simulationSession || !activeReplayDay) return [];
+    const replayNodeIssueMap = buildReplayNodeIssueMap(activeReplayDay.trace);
+
+    const mappedNodes = simulationSession.graphSnapshot.nodes.map((node) => {
+      const nodeData = node.data as NodeData;
+      const runtimeResult = activeReplayDay.runtimeResults[node.id];
+      const changedToday = activeReplayDay.changedNodeIds.has(node.id);
+      const replayIssue = replayNodeIssueMap.get(node.id);
+
+      return {
+        ...node,
+        selected: false,
+        zIndex: runtimeResult || replayIssue ? 20 : 1,
+        data: {
+          ...nodeData,
+          runtimeResult,
+          runtimeResultMeta: runtimeResult
+            ? {
+                label: changedToday ? "Updated today" : "Replay",
+                glow: changedToday,
+              }
+            : undefined,
+          errorState: replayIssue,
+          readOnly: true,
+        },
+      } as Node<NodeData>;
+    });
+
+    return applyReplayNodeSpacing(mappedNodes);
+  }, [activeReplayDay, simulationSession]);
+  const replayEdges = useMemo(
+    () =>
+      simulationSession
+        ? simulationSession.graphSnapshot.edges.map((edge) => ({
+            ...edge,
+            selected: false,
+          }))
+        : [],
+    [simulationSession]
+  );
+  const displayNodes = sandboxMode === "replay" && simulationSession ? replayNodes : nodes;
+  const displayEdges = sandboxMode === "replay" && simulationSession ? replayEdges : edges;
 
   const dismissTransientBanner = useCallback(() => {
     if (timeoutRef.current !== null) {
@@ -838,6 +2285,9 @@ function SandboxInner() {
     return () => {
       if (timeoutRef.current !== null) {
         window.clearTimeout(timeoutRef.current);
+      }
+      if (replayHighlightTimeoutRef.current !== null) {
+        window.clearTimeout(replayHighlightTimeoutRef.current);
       }
     };
   }, []);
@@ -897,6 +2347,43 @@ function SandboxInner() {
     return () => abortController.abort();
   }, [notifyTransientBanner]);
 
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    const loadSimulationBounds = async () => {
+      setIsSimulationBoundsLoading(true);
+      setSimulationBoundsError("");
+      try {
+        const bounds = await fetchSimulationBounds(abortController.signal);
+        setSimulationBounds(bounds);
+        if (bounds.hasPriceData && bounds.earliestPriceDate && bounds.latestPriceDate) {
+          setSimulationConfig((current) =>
+            adjustSimulationRange(
+              {
+                ...buildSimulationConfigFromBounds(bounds, current.initialCash),
+                initialCash: current.initialCash,
+              },
+              bounds
+            )
+          );
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setSimulationBoundsError("Simulation date bounds could not be loaded.");
+        notifyTransientBanner(
+          "Could not load simulation dates",
+          "The sandbox could not determine the available market-data range.",
+          ["Refresh the page or verify the backend is running."]
+        );
+      } finally {
+        setIsSimulationBoundsLoading(false);
+      }
+    };
+
+    void loadSimulationBounds();
+    return () => abortController.abort();
+  }, [notifyTransientBanner]);
+
   const clearRuntimeResults = useCallback(() => {
     setNodes((currentNodes) => stripRuntimeResults(currentNodes));
   }, [setNodes]);
@@ -909,24 +2396,42 @@ function SandboxInner() {
     [setNodes]
   );
 
+  const flashReplayTimeline = useCallback(() => {
+    if (replayHighlightTimeoutRef.current !== null) {
+      window.clearTimeout(replayHighlightTimeoutRef.current);
+    }
+    setIsReplayTimelineHighlighted(true);
+    replayHighlightTimeoutRef.current = window.setTimeout(() => {
+      setIsReplayTimelineHighlighted(false);
+      replayHighlightTimeoutRef.current = null;
+    }, 2200);
+  }, []);
+
+  const enterReplayForDay = useCallback((dayIndex: number) => {
+    setSelectedReplayDayIndex(dayIndex);
+    setHoveredReplayDayIndex(null);
+    setSandboxMode("replay");
+  }, []);
+
   const onNodesChange = useCallback(
     (changes: Parameters<typeof applyNodeChanges>[0]) => {
+      if (sandboxMode === "replay") return;
+      if (changes.length > 0) {
+        clearRuntimeResults();
+      }
       setNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
     },
-    [setNodes]
+    [clearRuntimeResults, sandboxMode, setNodes]
   );
 
   const onEdgesChange = useCallback(
     (changes: Parameters<typeof applyEdgeChanges>[0]) => {
+      if (sandboxMode === "replay") return;
       clearRuntimeResults();
       setEdges((currentEdges) => applyEdgeChanges(changes, currentEdges));
     },
-    [clearRuntimeResults, setEdges]
+    [clearRuntimeResults, sandboxMode, setEdges]
   );
-
-  const graphDatabase = useMemo(() => {
-    return buildBackendGraphPayload({ nodes, edges });
-  }, [edges, nodes]);
 
   const focusedIssue = activeIssues[focusedIssueIndex];
   const currentBanner =
@@ -1112,6 +2617,10 @@ function SandboxInner() {
         setEdges(loadedEdges);
         setActiveIssues([]);
         setFocusedIssueIndex(0);
+        setSimulationSession(null);
+        setSandboxMode("edit");
+        setSelectedReplayDayIndex(0);
+        setHoveredReplayDayIndex(null);
         setCurrentStrategyId(typeof payload.id === "string" ? payload.id : strategy.id);
         setCurrentStrategyName(strategy.name);
         setPaletteDrag(null);
@@ -1134,6 +2643,7 @@ function SandboxInner() {
 
   const onConnect = useCallback(
     (params: Edge | Connection) => {
+      if (sandboxMode === "replay") return;
       clearRuntimeResults();
       if (typeof params.target === "string") {
         clearIssueForNode(params.target);
@@ -1142,11 +2652,14 @@ function SandboxInner() {
         addEdge({ ...params, type: "smoothstep", animated: true }, currentEdges)
       );
     },
-    [clearIssueForNode, clearRuntimeResults, setEdges]
+    [clearIssueForNode, clearRuntimeResults, sandboxMode, setEdges]
   );
 
   const tryCreateNode = useCallback(
     (type: string, position: { x: number; y: number }) => {
+      if (sandboxMode === "replay") {
+        return false;
+      }
       if (!isSupportedNodeType(type)) {
         notifyTransientBanner(
           "Unsupported node",
@@ -1181,7 +2694,7 @@ function SandboxInner() {
       }
       return true;
     },
-    [getDefaultNodeData, isSupportedNodeType, nodes.length, notifyTransientBanner, setNodes]
+    [getDefaultNodeData, isSupportedNodeType, nodes.length, notifyTransientBanner, sandboxMode, setNodes]
   );
 
   const resolveCanvasDragState = useCallback(
@@ -1215,11 +2728,12 @@ function SandboxInner() {
 
   const onTemplatePointerDown = useCallback(
     (event: React.PointerEvent, nodeType: string) => {
+      if (sandboxMode === "replay") return;
       if (event.button !== 0) return;
       event.preventDefault();
       setPaletteDrag(resolveCanvasDragState(nodeType, event.pointerId, event.clientX, event.clientY));
     },
-    [resolveCanvasDragState]
+    [resolveCanvasDragState, sandboxMode]
   );
 
   useEffect(() => {
@@ -1270,6 +2784,10 @@ function SandboxInner() {
     setPaletteDrag(null);
     setActiveIssues([]);
     setFocusedIssueIndex(0);
+    setSimulationSession(null);
+    setSandboxMode("edit");
+    setSelectedReplayDayIndex(0);
+    setHoveredReplayDayIndex(null);
     dismissTransientBanner();
     setNodes((currentNodes) => clearNodeIssues(stripRuntimeResults(currentNodes)));
   }, [dismissTransientBanner, setNodes]);
@@ -1328,27 +2846,93 @@ function SandboxInner() {
       return;
     }
 
+    const normalizedSimulationConfig = adjustSimulationRange(simulationConfig, simulationBounds);
+    const simulationError = validateSimulationConfig(normalizedSimulationConfig, simulationBounds);
+    setSimulationConfig(normalizedSimulationConfig);
+    if (simulationError) {
+      notifyTransientBanner("Simulation needs dates", simulationError);
+      return;
+    }
+    if (nextStrategyTestAllowedAt > Date.now()) {
+      notifyTransientBanner(
+        "Please wait before testing again",
+        `Strategy simulations are limited to one run every 5 seconds. ${strategyTestCooldownLabel}.`
+      );
+      return;
+    }
+
     setIsStrategyTesting(true);
+    setNextStrategyTestAllowedAt(Date.now() + STRATEGY_TEST_COOLDOWN_MS);
+    setStrategyTestCooldownNow(Date.now());
     dismissTransientBanner();
     setActiveIssues([]);
     setFocusedIssueIndex(0);
     setNodes((currentNodes) => clearNodeIssues(stripRuntimeResults(currentNodes)));
 
     try {
+      const replaySourceGraph = {
+        nodes: clearNodeIssues(stripRuntimeResults(nodes)).map((node) => ({
+          ...node,
+          selected: false,
+        })) as Node<NodeData>[],
+        edges: edges.map((edge) => ({
+          ...edge,
+          selected: false,
+        })),
+      };
       const materializedGraph = materializeInlineMathInputs(nodes, edges);
       const payloadGraph = buildBackendGraphPayload(materializedGraph);
 
-      const payload: BackendGraphDto = {
-        id: currentStrategyId ?? "draft",
-        nodes: payloadGraph.nodes as unknown[],
-        edges: payloadGraph.edges as unknown[],
+      const payload = {
+        strategy: {
+          id: currentStrategyId ?? "draft",
+          nodes: payloadGraph.nodes as unknown[],
+          edges: payloadGraph.edges as unknown[],
+        },
+        simulation: normalizedSimulationConfig,
       };
 
-      const results = await testStrategy(payload);
-      setNodes((currentNodes) => mergeRuntimeResults(stripRuntimeResults(currentNodes), results));
+      const result = await simulateStrategy(payload);
+      const graphSnapshot = cloneReplayGraphSnapshot(replaySourceGraph);
+      const replayDays = buildReplayDays(result, graphSnapshot);
+      if (replayDays.length === 0) {
+        throw new Error("The simulation completed without any replay days to display.");
+      }
+
+      const nextSession: ReplaySession = {
+        graphSnapshot,
+        graphSignature: serializeGraphSignature(replaySourceGraph),
+        result,
+        replayDays,
+      };
+
+      setSimulationSession(nextSession);
+      setSandboxMode("replay");
+      setSelectedReplayDayIndex(replayDays.length - 1);
+      setHoveredReplayDayIndex(null);
       setActiveIssues([]);
       setFocusedIssueIndex(0);
+      flashReplayTimeline();
+      notifyTransientBanner(
+        "Simulation ready",
+        `Replay opened on ${formatDisplayDate(replayDays[replayDays.length - 1]?.date ?? normalizedSimulationConfig.endDate)}.`
+      );
+      window.requestAnimationFrame(() => {
+        void fitView({ padding: 0.2, duration: 280 });
+      });
     } catch (error) {
+      if (isApiError(error) && error.code === "simulation_rate_limited") {
+        const retryAfterMs = parseRetryAfterMs(error) ?? STRATEGY_TEST_COOLDOWN_MS;
+        setNextStrategyTestAllowedAt(Date.now() + retryAfterMs);
+        setStrategyTestCooldownNow(Date.now());
+        notifyTransientBanner(
+          "Please wait before testing again",
+          `${error.message} Try again in ${formatCooldownSeconds(retryAfterMs)}.`,
+          error.details.filter((detail) => !detail.startsWith("retryAfterMs="))
+        );
+        return;
+      }
+
       const issues = normalizeStrategyIssues(error, nodes);
       if (issues.length > 0) {
         setActiveIssues(issues);
@@ -1360,7 +2944,7 @@ function SandboxInner() {
       } else {
         notifyTransientBanner(
           "Could not test strategy",
-          formatFallbackErrorMessage(error, "The strategy test failed. Review the graph and try again."),
+          formatFallbackErrorMessage(error, "The strategy simulation failed. Review the graph and try again."),
           isApiError(error) ? error.details : undefined
         );
       }
@@ -1371,13 +2955,50 @@ function SandboxInner() {
     currentStrategyId,
     dismissTransientBanner,
     edges,
+    fitView,
+    flashReplayTimeline,
     focusIssue,
+    nextStrategyTestAllowedAt,
     nodes,
     nodes.length,
     notifyTransientBanner,
+    simulationBounds,
+    simulationConfig,
+    strategyTestCooldownLabel,
     setNodes,
   ]);
 
+  const isReplayMode = sandboxMode === "replay" && simulationSession !== null;
+  const hasSimulationPriceData = hasUsableSimulationBounds(simulationBounds);
+  const simulationMinDate = hasSimulationPriceData ? simulationBounds.earliestPriceDate : undefined;
+  const simulationMaxDate = hasSimulationPriceData ? simulationBounds.latestPriceDate : undefined;
+  const simulationEndDateLimit = hasSimulationPriceData
+    ? toSimulationRangeLimit(simulationConfig.startDate, simulationBounds)
+    : formatIsoDate(clampToWeekday(addUtcMonths(toUtcDate(simulationConfig.startDate), 6), -1));
+  const finalReplayDayIndex = simulationSession ? Math.max(simulationSession.replayDays.length - 1, 0) : 0;
+  const isFinalReplayDay = Boolean(activeReplayDay && activeReplayDay.index === finalReplayDayIndex);
+  const activeReplayPositions = useMemo(() => {
+    if (!simulationSession || !activeReplayDay) return [];
+    if (isFinalReplayDay) {
+      return simulationSession.result.portfolio.positions.map((position) => ({
+        ticker: position.ticker,
+        quantity: position.quantity,
+        averageCost: position.averageCost,
+        marketPrice: position.marketPrice,
+        marketValue: position.marketValue,
+        unrealizedPnl: position.unrealizedPnl,
+      }));
+    }
+
+    return activeReplayDay.positions.map((position) => ({
+      ticker: position.ticker,
+      quantity: position.quantity,
+      averageCost: position.averageCost,
+      marketPrice: null,
+      marketValue: undefined,
+      unrealizedPnl: undefined,
+    }));
+  }, [activeReplayDay, isFinalReplayDay, simulationSession]);
   const activeDraggedNode = paletteDrag ? nodePaletteByType.get(paletteDrag.nodeType) : undefined;
   const paletteGhostWidth = SANDBOX_NODE_WIDTH;
   const paletteGhostScale = paletteDrag
@@ -1408,6 +3029,17 @@ function SandboxInner() {
           to {
             opacity: 1;
             transform: translateX(-50%) translateY(0);
+          }
+        }
+
+        @keyframes calendarBubbleIn {
+          from {
+            opacity: 0;
+            transform: translateY(-8px) scale(0.98);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
           }
         }
 
@@ -1485,6 +3117,10 @@ function SandboxInner() {
         .node-library-panel::-webkit-scrollbar-corner {
           background: transparent;
         }
+
+        .replay-timeline-scroll::-webkit-scrollbar {
+          display: none;
+        }
       `}</style>
 
       {currentBanner && (
@@ -1540,7 +3176,8 @@ function SandboxInner() {
                   onPointerDown={(e) => onTemplatePointerDown(e, node.type)}
                   style={{
                     ...nodeTemplateDraggableStyle,
-                    opacity: paletteDrag?.nodeType === node.type ? 0.35 : 1,
+                    opacity: sandboxMode === "replay" ? 0.42 : paletteDrag?.nodeType === node.type ? 0.35 : 1,
+                    cursor: sandboxMode === "replay" ? "not-allowed" : "grab",
                   }}
                 >
                   <NodeTemplatePreview
@@ -1555,7 +3192,11 @@ function SandboxInner() {
         ))}
 
         <div style={{ marginTop: 16, fontSize: 12, color: UI_TEXT_SECONDARY }}>
-          {isNodeCatalogLoading ? "Loading node types..." : "Drag a node onto the canvas."}
+          {isNodeCatalogLoading
+            ? "Loading node types..."
+            : sandboxMode === "replay"
+              ? "Replay is read-only. Return to edit mode to change the graph."
+              : "Drag a node onto the canvas."}
           <br />
           {isNodeCatalogLoading
             ? "Node palette is populated from backend metadata."
@@ -1582,25 +3223,61 @@ function SandboxInner() {
         </pre>
       </div>
 
-      <div ref={canvasWrapperRef} style={{ flex: 1, minHeight: 0, height: "100%", width: "100%" }}>
-        <ReactFlow
-          nodeTypes={nodeTypes}
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          nodeOrigin={[0.5, 0.5]}
-          fitView
-        >
-          <Background color={UI_BORDER_SUBTLE} gap={24} size={1.2} />
-          <MiniMap
-            nodeColor={UI_BORDER_STRONG}
-            maskColor="rgba(10, 10, 15, 0.72)"
-            style={{ background: UI_PANEL }}
+      <div
+        style={{
+          flex: "1 1 0",
+          minWidth: 0,
+          minHeight: 0,
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+        <div ref={canvasWrapperRef} style={{ flex: 1, minWidth: 0, minHeight: 0, height: "100%", width: "100%" }}>
+          <ReactFlow
+            nodeTypes={nodeTypes}
+            nodes={displayNodes}
+            edges={displayEdges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            nodeOrigin={[0.5, 0.5]}
+            nodesDraggable={!isReplayMode}
+            nodesConnectable={!isReplayMode}
+            elementsSelectable={!isReplayMode}
+            nodesFocusable={!isReplayMode}
+            edgesFocusable={!isReplayMode}
+            fitView
+          >
+            <Background color={UI_BORDER_SUBTLE} gap={24} size={1.2} />
+            <MiniMap
+              nodeColor={UI_BORDER_STRONG}
+              maskColor="rgba(10, 10, 15, 0.72)"
+              style={{ background: UI_PANEL }}
+            />
+            <Controls />
+          </ReactFlow>
+        </div>
+
+        {simulationSession && activeReplayDay && (
+          <ReplayTimeline
+            session={simulationSession}
+            mode={sandboxMode}
+            activeDayIndex={activeReplayDayIndex}
+            hoveredDayIndex={hoveredReplayDayIndex}
+            selectedDayIndex={selectedReplayDayIndex}
+            highlight={isReplayTimelineHighlighted}
+            onEnterReplay={() => setSandboxMode("replay")}
+            onExitReplay={() => {
+              setSandboxMode("edit");
+              setHoveredReplayDayIndex(null);
+            }}
+            onHoverDay={setHoveredReplayDayIndex}
+            onLeaveDay={() => setHoveredReplayDayIndex(null)}
+            onSelectDay={enterReplayForDay}
           />
-          <Controls />
-        </ReactFlow>
+        )}
       </div>
 
       {paletteDrag && activeDraggedNode && (
@@ -1631,7 +3308,7 @@ function SandboxInner() {
 
       <div
         style={{
-          width: 220,
+          width: 340,
           padding: 12,
           borderLeft: `1px solid ${UI_BORDER_SUBTLE}`,
           fontFamily: "system-ui, sans-serif",
@@ -1645,118 +3322,442 @@ function SandboxInner() {
           background: UI_PANEL,
         }}
       >
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 700, marginBottom: 10, color: UI_TEXT_PRIMARY }}>Strategies</div>
-
-          <div
-            style={{
-              marginBottom: 12,
-              padding: "8px 10px",
-              border: `1px solid ${UI_BORDER_SUBTLE}`,
-              borderRadius: 8,
-              background: UI_CARD,
-            }}
-          >
-            <div style={{ fontSize: 11, color: UI_TEXT_SECONDARY, marginBottom: 4 }}>Active</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: UI_TEXT_PRIMARY }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={sidebarCardStyle}>
+            <div style={sidebarSectionTitleStyle}>{isReplayMode ? "Replay" : "Strategy"}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: UI_TEXT_PRIMARY }}>
               {currentStrategyName ?? "No strategy loaded"}
             </div>
             {currentStrategyId && (
-              <div style={{ marginTop: 2, fontSize: 11, color: UI_TEXT_SECONDARY }}>ID: {currentStrategyId}</div>
+              <div style={{ marginTop: 4, fontSize: 11, color: UI_TEXT_SECONDARY }}>ID: {currentStrategyId}</div>
+            )}
+            {simulationSession && !isReplayMode && (
+              <button
+                type="button"
+                onClick={() => setSandboxMode("replay")}
+                style={{ ...toolbarButtonStyle, marginTop: 10, cursor: "pointer" }}
+              >
+                Open Replay View
+              </button>
+            )}
+            {isReplayMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSandboxMode("edit");
+                  setHoveredReplayDayIndex(null);
+                }}
+                style={{ ...toolbarButtonStyle, marginTop: 10, cursor: "pointer" }}
+              >
+                Back to edit
+              </button>
             )}
           </div>
 
-          {nodes.length === 0 ? (
+          {replayHasDraftChanges && (
+            <div
+              style={{
+                ...sidebarCardStyle,
+                borderColor: UI_ACCENT,
+                background: withAlpha(UI_ACCENT, 0.1),
+              }}
+            >
+              <div style={sidebarSectionTitleStyle}>Replay status</div>
+              <div style={{ fontSize: 12, lineHeight: 1.45, color: UI_TEXT_PRIMARY }}>
+                Replay is showing the last simulated graph. Your current draft has changed since that run.
+              </div>
+            </div>
+          )}
+
+          {!isReplayMode && (
             <>
-              {isStrategiesLoading && (
-                <div style={{ fontSize: 12, color: UI_TEXT_SECONDARY }}>Loading previous strategies...</div>
-              )}
+              <div style={sidebarCardStyle}>
+                <div style={sidebarSectionTitleStyle}>Simulation</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <CalendarDateField
+                    label="Start"
+                    value={simulationConfig.startDate}
+                    minDate={simulationMinDate}
+                    maxDate={hasSimulationPriceData ? simulationConfig.endDate : undefined}
+                    disabled={isSimulationBoundsLoading || !hasSimulationPriceData}
+                    onChange={(value) =>
+                      setSimulationConfig((current) =>
+                        adjustSimulationRange(
+                          {
+                            ...current,
+                            startDate: value,
+                            endDate:
+                              toUtcDate(current.endDate).getTime() < toUtcDate(value).getTime()
+                                ? value
+                                : current.endDate,
+                          },
+                          simulationBounds
+                        )
+                      )
+                    }
+                  />
+                  <CalendarDateField
+                    label="End"
+                    value={simulationConfig.endDate}
+                    minDate={hasSimulationPriceData ? simulationConfig.startDate : simulationMinDate}
+                    maxDate={hasSimulationPriceData ? simulationEndDateLimit : simulationMaxDate}
+                    disabled={isSimulationBoundsLoading || !hasSimulationPriceData}
+                    onChange={(value) =>
+                      setSimulationConfig((current) =>
+                        adjustSimulationRange(
+                          {
+                            ...current,
+                            endDate: value,
+                          },
+                          simulationBounds
+                        )
+                      )
+                    }
+                  />
+                </div>
 
-              {!isStrategiesLoading && strategiesError && (
-                <>
-                  <div style={{ fontSize: 12, color: UI_ACCENT, marginBottom: 8 }}>{strategiesError}</div>
-                  <button type="button" onClick={() => void fetchStrategies()} style={toolbarButtonStyle}>
-                    Retry
-                  </button>
-                </>
-              )}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <span style={sidebarFieldLabelStyle}>Period</span>
+                    <input value="1d" readOnly disabled style={{ ...sidebarInputStyle, width: 72 }} />
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <span style={sidebarFieldLabelStyle}>Initial cash</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={simulationConfig.initialCash}
+                      onChange={(event) =>
+                        setSimulationConfig((current) => ({
+                          ...current,
+                          initialCash: Number.isFinite(Number(event.target.value))
+                            ? Math.max(0, Number(event.target.value))
+                            : 0,
+                        }))
+                      }
+                      style={sidebarInputStyle}
+                    />
+                  </label>
+                </div>
 
-              {!isStrategiesLoading && !strategiesError && strategies.length > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {strategies.map((strategy) => (
-                    <button
-                      key={strategy.id}
-                      type="button"
-                      onClick={() => void loadStrategy(strategy)}
-                      disabled={isStrategyLoading}
-                      style={{
-                        ...strategyCardButtonStyle,
-                        borderColor: currentStrategyId === strategy.id ? UI_BORDER_STRONG : UI_BORDER_SUBTLE,
-                        background: currentStrategyId === strategy.id ? UI_ELEVATED : UI_CARD,
-                        opacity: isStrategyLoading ? 0.7 : 1,
-                        cursor: isStrategyLoading ? "wait" : "pointer",
-                      }}
-                    >
-                      <div style={{ fontWeight: 600, fontSize: 13, color: UI_TEXT_PRIMARY }}>{strategy.name}</div>
-                      <div style={{ marginTop: 4, fontSize: 11, color: UI_TEXT_SECONDARY }}>
-                        Last edited: {formatLastEdited(strategy.lastEdited)}
+                {hasSimulationPriceData && (
+                  <div style={{ marginTop: 10, fontSize: 12, color: UI_TEXT_SECONDARY }}>
+                    Available price data: {formatDisplayDate(simulationBounds.earliestPriceDate)} to{" "}
+                    {formatDisplayDate(simulationBounds.latestPriceDate)}
+                  </div>
+                )}
+
+                {simulationValidationMessage && (
+                  <div style={{ marginTop: 10, fontSize: 12, color: UI_ACCENT }}>
+                    {simulationValidationMessage}
+                  </div>
+                )}
+              </div>
+
+              {nodes.length === 0 ? (
+                <div style={sidebarCardStyle}>
+                  <div style={sidebarSectionTitleStyle}>Saved strategies</div>
+                  {isStrategiesLoading && (
+                    <div style={{ fontSize: 12, color: UI_TEXT_SECONDARY }}>Loading previous strategies...</div>
+                  )}
+
+                  {!isStrategiesLoading && strategiesError && (
+                    <>
+                      <div style={{ fontSize: 12, color: UI_ACCENT, marginBottom: 8 }}>{strategiesError}</div>
+                      <button type="button" onClick={() => void fetchStrategies()} style={toolbarButtonStyle}>
+                        Retry
+                      </button>
+                    </>
+                  )}
+
+                  {!isStrategiesLoading && !strategiesError && strategies.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {strategies.map((strategy) => (
+                        <button
+                          key={strategy.id}
+                          type="button"
+                          onClick={() => void loadStrategy(strategy)}
+                          disabled={isStrategyLoading}
+                          style={{
+                            ...strategyCardButtonStyle,
+                            borderColor: currentStrategyId === strategy.id ? UI_BORDER_STRONG : UI_BORDER_SUBTLE,
+                            background: currentStrategyId === strategy.id ? UI_ELEVATED : UI_CARD,
+                            opacity: isStrategyLoading ? 0.7 : 1,
+                            cursor: isStrategyLoading ? "wait" : "pointer",
+                          }}
+                        >
+                          <div style={{ fontWeight: 600, fontSize: 13, color: UI_TEXT_PRIMARY }}>{strategy.name}</div>
+                          <div style={{ marginTop: 4, fontSize: 11, color: UI_TEXT_SECONDARY }}>
+                            Last edited: {formatLastEdited(strategy.lastEdited)}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {!isStrategiesLoading && !strategiesError && strategies.length === 0 && (
+                    <>
+                      <div style={{ fontSize: 12, color: UI_TEXT_SECONDARY, marginBottom: 8 }}>
+                        No previous strategies found.
                       </div>
-                    </button>
+                      <button type="button" onClick={onCreateStrategy} style={toolbarButtonStyle}>
+                        Create strategy
+                      </button>
+                    </>
+                  )}
+
+                  {isStrategyLoading && (
+                    <div style={{ marginTop: 10, fontSize: 12, color: UI_TEXT_SECONDARY }}>Loading graph...</div>
+                  )}
+                </div>
+              ) : (
+                <div style={sidebarCardStyle}>
+                  <div style={sidebarSectionTitleStyle}>Draft</div>
+                  <div style={{ fontSize: 12, color: UI_TEXT_SECONDARY }}>
+                    This graph is ready. Add nodes or edges, then run the simulation to refresh Replay.
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {isReplayMode && simulationSession && activeReplayDay && (
+            <>
+              <div style={sidebarCardStyle}>
+                <div style={sidebarSectionTitleStyle}>Selected day</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: UI_TEXT_PRIMARY }}>
+                  {formatDisplayDate(activeReplayDay.date)}
+                </div>
+                <div style={{ marginTop: 4, fontSize: 12, color: UI_TEXT_SECONDARY }}>
+                  {activeReplayDay.changedNodeCount} nodes changed • {activeReplayDay.changedOutputCount} outputs updated
+                </div>
+              </div>
+
+              {(activeReplayDay.trace.errors.length > 0 || activeReplayDay.trace.warnings.length > 0) && (
+                <div
+                  style={{
+                    ...sidebarCardStyle,
+                    borderColor: activeReplayDay.trace.errors.length > 0 ? "#E24B4A" : "#E8A33B",
+                    background:
+                      activeReplayDay.trace.errors.length > 0
+                        ? "rgba(226, 75, 74, 0.08)"
+                        : "rgba(232, 163, 59, 0.08)",
+                  }}
+                >
+                  <div style={sidebarSectionTitleStyle}>Signals</div>
+                  {activeReplayDay.trace.errors.map((error) => (
+                    <div key={error} style={{ fontSize: 12, color: UI_TEXT_PRIMARY, marginBottom: 6 }}>
+                      {error}
+                    </div>
+                  ))}
+                  {activeReplayDay.trace.warnings.map((warning) => (
+                    <div key={warning} style={{ fontSize: 12, color: UI_TEXT_PRIMARY, marginBottom: 6 }}>
+                      {warning}
+                    </div>
                   ))}
                 </div>
               )}
 
-              {!isStrategiesLoading && !strategiesError && strategies.length === 0 && (
-                <>
-                  <div style={{ fontSize: 12, color: UI_TEXT_SECONDARY, marginBottom: 8 }}>
-                    No previous strategies found.
+              <div style={sidebarCardStyle}>
+                <div style={sidebarSectionTitleStyle}>Balance</div>
+                <div style={sidebarMetricGridStyle}>
+                  <div>
+                    <div style={sidebarMetricLabelStyle}>Equity</div>
+                    <div style={sidebarMetricValueStyle}>{formatCurrency(activeReplayDay.trace.balanceSnapshot.equity)}</div>
                   </div>
-                  <button type="button" onClick={onCreateStrategy} style={toolbarButtonStyle}>
-                    Create strategy
-                  </button>
-                </>
-              )}
+                  <div>
+                    <div style={sidebarMetricLabelStyle}>Cash</div>
+                    <div style={sidebarMetricValueStyle}>{formatCurrency(activeReplayDay.trace.balanceSnapshot.cash)}</div>
+                  </div>
+                  <div>
+                    <div style={sidebarMetricLabelStyle}>Market value</div>
+                    <div style={sidebarMetricValueStyle}>
+                      {formatCurrency(activeReplayDay.trace.balanceSnapshot.marketValue)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={sidebarMetricLabelStyle}>Realized P/L</div>
+                    <div
+                      style={{
+                        ...sidebarMetricValueStyle,
+                        color:
+                          activeReplayDay.trace.balanceSnapshot.realizedPnl >= 0 ? "#6FD58A" : "#F07A7A",
+                      }}
+                    >
+                      {formatSignedCurrency(activeReplayDay.trace.balanceSnapshot.realizedPnl)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={sidebarMetricLabelStyle}>Unrealized P/L</div>
+                    <div
+                      style={{
+                        ...sidebarMetricValueStyle,
+                        color:
+                          activeReplayDay.trace.balanceSnapshot.unrealizedPnl >= 0 ? "#6FD58A" : "#F07A7A",
+                      }}
+                    >
+                      {formatSignedCurrency(activeReplayDay.trace.balanceSnapshot.unrealizedPnl)}
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-              {isStrategyLoading && (
-                <div style={{ marginTop: 10, fontSize: 12, color: UI_TEXT_SECONDARY }}>Loading graph...</div>
+              <div style={sidebarCardStyle}>
+                <div style={sidebarSectionTitleStyle}>Portfolio</div>
+                {activeReplayPositions.length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {activeReplayPositions.map((position) => (
+                      <div
+                        key={position.ticker}
+                        style={{
+                          padding: "8px 10px",
+                          borderRadius: 8,
+                          border: `1px solid ${UI_BORDER_SUBTLE}`,
+                          background: UI_ELEVATED,
+                        }}
+                      >
+                        <div style={{ fontSize: 13, fontWeight: 700, color: UI_TEXT_PRIMARY }}>{position.ticker}</div>
+                        <div style={{ marginTop: 4, fontSize: 11, color: UI_TEXT_SECONDARY }}>
+                          {formatSignedNumber(position.quantity)} shares • avg {formatCurrency(position.averageCost)}
+                        </div>
+                        {typeof position.marketValue === "number" && (
+                          <div style={{ marginTop: 4, fontSize: 11, color: UI_TEXT_SECONDARY }}>
+                            Value {formatCurrency(position.marketValue)}
+                          </div>
+                        )}
+                        {typeof position.unrealizedPnl === "number" && (
+                          <div style={{ marginTop: 2, fontSize: 11, color: UI_TEXT_SECONDARY }}>
+                            Unrealized {formatSignedCurrency(position.unrealizedPnl)}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: UI_TEXT_SECONDARY }}>No open positions on this day.</div>
+                )}
+              </div>
+
+              <div style={sidebarCardStyle}>
+                <div style={sidebarSectionTitleStyle}>Trades</div>
+                {activeReplayDay.trace.trades.length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {activeReplayDay.trace.trades.map((trade) => (
+                      <div
+                        key={`${trade.nodeId}-${trade.ticker}-${trade.action}-${trade.cashAfter}`}
+                        style={{
+                          padding: "8px 10px",
+                          borderRadius: 8,
+                          border: `1px solid ${UI_BORDER_SUBTLE}`,
+                          background: UI_ELEVATED,
+                        }}
+                      >
+                        <div style={{ fontSize: 12, fontWeight: 700, color: UI_TEXT_PRIMARY }}>
+                          {trade.action.toUpperCase()} {trade.ticker}
+                        </div>
+                        <div style={{ marginTop: 4, fontSize: 11, color: UI_TEXT_SECONDARY }}>
+                          {formatSignedNumber(trade.filledShares)} shares @ {formatCurrency(trade.fillPrice)}
+                        </div>
+                        <div style={{ marginTop: 2, fontSize: 11, color: UI_TEXT_SECONDARY }}>
+                          Cash {formatCurrency(trade.cashBefore)} → {formatCurrency(trade.cashAfter)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: UI_TEXT_SECONDARY }}>No trades were executed on this day.</div>
+                )}
+              </div>
+
+              {isFinalReplayDay && (
+                <div style={sidebarCardStyle}>
+                  <div style={sidebarSectionTitleStyle}>Simulation end</div>
+                  <div style={sidebarMetricGridStyle}>
+                    <div>
+                      <div style={sidebarMetricLabelStyle}>Executed days</div>
+                      <div style={sidebarMetricValueStyle}>{simulationSession.result.summary.executedDays}</div>
+                    </div>
+                    <div>
+                      <div style={sidebarMetricLabelStyle}>Trades</div>
+                      <div style={sidebarMetricValueStyle}>{simulationSession.result.summary.tradeCount}</div>
+                    </div>
+                    <div>
+                      <div style={sidebarMetricLabelStyle}>Final equity</div>
+                      <div style={sidebarMetricValueStyle}>
+                        {formatCurrency(simulationSession.result.summary.finalEquity)}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={sidebarMetricLabelStyle}>Final cash</div>
+                      <div style={sidebarMetricValueStyle}>
+                        {formatCurrency(simulationSession.result.summary.finalCash)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               )}
             </>
-          ) : (
-            <div style={{ fontSize: 12, color: UI_TEXT_SECONDARY }}>
-              This graph is ready. Add nodes or edges to continue editing.
-            </div>
           )}
         </div>
 
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <button
-            type="button"
-            onClick={() => void onTestStrategy()}
-            disabled={isStrategyTesting || nodes.length === 0}
-            style={{
-              ...toolbarButtonStyle,
-              flex: 1,
-              opacity: isStrategyTesting || nodes.length === 0 ? 0.7 : 1,
-              cursor: isStrategyTesting ? "wait" : nodes.length === 0 ? "not-allowed" : "pointer",
-            }}
-          >
-            {isStrategyTesting ? "Testing..." : "Test strategy"}
-          </button>
+        {!isReplayMode && (
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button
+              type="button"
+              onClick={() => void onTestStrategy()}
+              disabled={
+                isStrategyTesting ||
+                isStrategyTestCoolingDown ||
+                isSimulationBoundsLoading ||
+                !hasSimulationPriceData ||
+                nodes.length === 0 ||
+                Boolean(simulationValidationMessage)
+              }
+              style={{
+                ...toolbarButtonStyle,
+                flex: 1,
+                opacity:
+                  isStrategyTesting ||
+                  isStrategyTestCoolingDown ||
+                  isSimulationBoundsLoading ||
+                  !hasSimulationPriceData ||
+                  nodes.length === 0 ||
+                  simulationValidationMessage
+                    ? 0.7
+                    : 1,
+                cursor:
+                  isStrategyTesting ||
+                  isStrategyTestCoolingDown ||
+                  isSimulationBoundsLoading ||
+                  !hasSimulationPriceData ||
+                  nodes.length === 0 ||
+                  simulationValidationMessage
+                    ? "not-allowed"
+                    : "pointer",
+              }}
+            >
+              {isStrategyTesting
+                ? "Testing..."
+                : isStrategyTestCoolingDown
+                  ? strategyTestCooldownLabel
+                  : "Test strategy"}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => void onSaveStrategy()}
-            disabled={isStrategySaving}
-            style={{
-              ...toolbarButtonStyle,
-              flex: 1,
-              opacity: isStrategySaving ? 0.7 : 1,
-              cursor: isStrategySaving ? "wait" : "pointer",
-            }}
-          >
-            {isStrategySaving ? "Saving..." : "Save strategy"}
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => void onSaveStrategy()}
+              disabled={isStrategySaving}
+              style={{
+                ...toolbarButtonStyle,
+                flex: 1,
+                opacity: isStrategySaving ? 0.7 : 1,
+                cursor: isStrategySaving ? "wait" : "pointer",
+              }}
+            >
+              {isStrategySaving ? "Saving..." : "Save strategy"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1795,6 +3796,72 @@ const strategyCardButtonStyle: React.CSSProperties = {
   borderRadius: 8,
   textAlign: "left",
   background: UI_CARD,
+};
+
+const smallGhostButtonStyle: React.CSSProperties = {
+  padding: "5px 8px",
+  borderRadius: 8,
+  border: `1px solid ${UI_BORDER_SUBTLE}`,
+  background: UI_ELEVATED,
+  color: UI_TEXT_PRIMARY,
+  fontSize: 11,
+  fontWeight: 600,
+  cursor: "pointer",
+};
+
+const sidebarCardStyle: React.CSSProperties = {
+  padding: "10px 12px",
+  border: `1px solid ${UI_BORDER_SUBTLE}`,
+  borderRadius: 10,
+  background: UI_CARD,
+};
+
+const sidebarSectionTitleStyle: React.CSSProperties = {
+  marginBottom: 8,
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  color: UI_TEXT_SECONDARY,
+};
+
+const sidebarFieldLabelStyle: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  color: UI_TEXT_SECONDARY,
+};
+
+const sidebarInputStyle: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  border: `1px solid ${UI_BORDER_SUBTLE}`,
+  borderRadius: 8,
+  padding: "8px 10px",
+  background: UI_ELEVATED,
+  color: UI_TEXT_PRIMARY,
+  fontSize: 12,
+};
+
+const sidebarMetricGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 10,
+};
+
+const sidebarMetricLabelStyle: React.CSSProperties = {
+  fontSize: 10,
+  color: UI_TEXT_SECONDARY,
+  textTransform: "uppercase",
+  letterSpacing: "0.06em",
+};
+
+const sidebarMetricValueStyle: React.CSSProperties = {
+  marginTop: 4,
+  fontSize: 13,
+  fontWeight: 700,
+  color: UI_TEXT_PRIMARY,
 };
 
 const bannerButtonStyle: React.CSSProperties = {
@@ -1865,3 +3932,4 @@ export default function Sandbox() {
     </ReactFlowProvider>
   );
 }
+

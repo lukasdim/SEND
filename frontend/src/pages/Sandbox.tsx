@@ -137,6 +137,8 @@ type ReplaySession = {
   replayDays: ReplayDayModel[];
 };
 
+const STRATEGY_TEST_COOLDOWN_MS = 5000;
+
 type PaletteDragState = {
   nodeType: string;
   pointerId: number;
@@ -506,6 +508,24 @@ function formatFallbackErrorMessage(error: unknown, fallbackMessage: string): st
   }
 
   return fallbackMessage;
+}
+
+function parseRetryAfterMs(error: unknown): number | null {
+  if (!isApiError(error)) return null;
+
+  for (const detail of error.details) {
+    const match = detail.match(/^retryAfterMs=(\d+)$/);
+    if (match) {
+      return Number(match[1]);
+    }
+  }
+
+  return null;
+}
+
+function formatCooldownSeconds(remainingMs: number): string {
+  const remainingSeconds = Math.max(1, Math.ceil(remainingMs / 1000));
+  return `${remainingSeconds}s`;
 }
 
 function humanizePortName(portName: string | undefined, portIndex: number | undefined): string {
@@ -2080,6 +2100,8 @@ function SandboxInner() {
   const [isStrategyLoading, setIsStrategyLoading] = useState(false);
   const [isStrategySaving, setIsStrategySaving] = useState(false);
   const [isStrategyTesting, setIsStrategyTesting] = useState(false);
+  const [nextStrategyTestAllowedAt, setNextStrategyTestAllowedAt] = useState(0);
+  const [strategyTestCooldownNow, setStrategyTestCooldownNow] = useState(() => Date.now());
   const [simulationBounds, setSimulationBounds] = useState<StrategySimulationBounds | null>(null);
   const [isSimulationBoundsLoading, setIsSimulationBoundsLoading] = useState(true);
   const [simulationBoundsError, setSimulationBoundsError] = useState("");
@@ -2161,6 +2183,11 @@ function SandboxInner() {
           : validateSimulationConfig(simulationConfig, simulationBounds),
     [isSimulationBoundsLoading, simulationBounds, simulationBoundsError, simulationConfig]
   );
+  const strategyTestCooldownRemainingMs = Math.max(0, nextStrategyTestAllowedAt - strategyTestCooldownNow);
+  const isStrategyTestCoolingDown = strategyTestCooldownRemainingMs > 0;
+  const strategyTestCooldownLabel = isStrategyTestCoolingDown
+    ? `Try again in ${formatCooldownSeconds(strategyTestCooldownRemainingMs)}`
+    : "";
   const replayHasDraftChanges = Boolean(
     simulationSession && simulationSession.graphSignature !== currentDraftGraphSignature
   );
@@ -2171,6 +2198,22 @@ function SandboxInner() {
       Math.max((simulationSession?.replayDays.length ?? 1) - 1, 0)
     );
   const activeReplayDay = simulationSession?.replayDays[activeReplayDayIndex] ?? null;
+
+  useEffect(() => {
+    if (!isStrategyTestCoolingDown) {
+      setStrategyTestCooldownNow(Date.now());
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setStrategyTestCooldownNow(Date.now());
+    }, 250);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isStrategyTestCoolingDown]);
+
   const replayNodes = useMemo(() => {
     if (!simulationSession || !activeReplayDay) return [];
     const replayNodeIssueMap = buildReplayNodeIssueMap(activeReplayDay.trace);
@@ -2810,8 +2853,17 @@ function SandboxInner() {
       notifyTransientBanner("Simulation needs dates", simulationError);
       return;
     }
+    if (nextStrategyTestAllowedAt > Date.now()) {
+      notifyTransientBanner(
+        "Please wait before testing again",
+        `Strategy simulations are limited to one run every 5 seconds. ${strategyTestCooldownLabel}.`
+      );
+      return;
+    }
 
     setIsStrategyTesting(true);
+    setNextStrategyTestAllowedAt(Date.now() + STRATEGY_TEST_COOLDOWN_MS);
+    setStrategyTestCooldownNow(Date.now());
     dismissTransientBanner();
     setActiveIssues([]);
     setFocusedIssueIndex(0);
@@ -2869,6 +2921,18 @@ function SandboxInner() {
         void fitView({ padding: 0.2, duration: 280 });
       });
     } catch (error) {
+      if (isApiError(error) && error.code === "simulation_rate_limited") {
+        const retryAfterMs = parseRetryAfterMs(error) ?? STRATEGY_TEST_COOLDOWN_MS;
+        setNextStrategyTestAllowedAt(Date.now() + retryAfterMs);
+        setStrategyTestCooldownNow(Date.now());
+        notifyTransientBanner(
+          "Please wait before testing again",
+          `${error.message} Try again in ${formatCooldownSeconds(retryAfterMs)}.`,
+          error.details.filter((detail) => !detail.startsWith("retryAfterMs="))
+        );
+        return;
+      }
+
       const issues = normalizeStrategyIssues(error, nodes);
       if (issues.length > 0) {
         setActiveIssues(issues);
@@ -2894,11 +2958,13 @@ function SandboxInner() {
     fitView,
     flashReplayTimeline,
     focusIssue,
+    nextStrategyTestAllowedAt,
     nodes,
     nodes.length,
     notifyTransientBanner,
     simulationBounds,
     simulationConfig,
+    strategyTestCooldownLabel,
     setNodes,
   ]);
 
@@ -3641,6 +3707,7 @@ function SandboxInner() {
               onClick={() => void onTestStrategy()}
               disabled={
                 isStrategyTesting ||
+                isStrategyTestCoolingDown ||
                 isSimulationBoundsLoading ||
                 !hasSimulationPriceData ||
                 nodes.length === 0 ||
@@ -3651,6 +3718,7 @@ function SandboxInner() {
                 flex: 1,
                 opacity:
                   isStrategyTesting ||
+                  isStrategyTestCoolingDown ||
                   isSimulationBoundsLoading ||
                   !hasSimulationPriceData ||
                   nodes.length === 0 ||
@@ -3659,6 +3727,7 @@ function SandboxInner() {
                     : 1,
                 cursor:
                   isStrategyTesting ||
+                  isStrategyTestCoolingDown ||
                   isSimulationBoundsLoading ||
                   !hasSimulationPriceData ||
                   nodes.length === 0 ||
@@ -3667,7 +3736,11 @@ function SandboxInner() {
                     : "pointer",
               }}
             >
-              {isStrategyTesting ? "Testing..." : "Test strategy"}
+              {isStrategyTesting
+                ? "Testing..."
+                : isStrategyTestCoolingDown
+                  ? strategyTestCooldownLabel
+                  : "Test strategy"}
             </button>
 
             <button

@@ -30,3 +30,7 @@ market-data:
 ocaml:
   worker:
     command: ""
+
+strategy:
+  rate-limit:
+    simulation-cooldown-ms: 5000

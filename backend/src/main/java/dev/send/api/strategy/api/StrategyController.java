@@ -4,6 +4,7 @@ import java.util.Collection;
 import java.util.List;
 
 import javax.annotation.Nullable;
+import jakarta.servlet.http.HttpServletRequest;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +24,8 @@ import dev.send.api.strategy.api.dto.StrategySimulationBoundsDto;
 import dev.send.api.strategy.api.dto.StrategySimulationRequestDto;
 import dev.send.api.strategy.api.dto.StrategySimulationResultDto;
 import dev.send.api.strategy.application.StrategyDocumentMapper;
+import dev.send.api.strategy.application.SimulationRateLimitException;
+import dev.send.api.strategy.application.StrategySimulationRateLimiter;
 import dev.send.api.strategy.application.StrategyService;
 import dev.send.api.strategy.application.StrategySimulationBoundsService;
 import dev.send.api.strategy.application.StrategyValidationException;
@@ -41,6 +44,7 @@ public class StrategyController {
     private final NodeCatalogService nodeCatalogService;
     private final StrategyExecutionService strategyExecutionService;
     private final StrategySimulationBoundsService strategySimulationBoundsService;
+    private final StrategySimulationRateLimiter strategySimulationRateLimiter;
     private final ObjectMapper objectMapper;
 
     public StrategyController(
@@ -49,12 +53,14 @@ public class StrategyController {
             NodeCatalogService nodeCatalogService,
             StrategyExecutionService strategyExecutionService,
             StrategySimulationBoundsService strategySimulationBoundsService,
+            StrategySimulationRateLimiter strategySimulationRateLimiter,
             ObjectMapper objectMapper) {
         this.strategyService = strategyService;
         this.strategyDocumentMapper = strategyDocumentMapper;
         this.nodeCatalogService = nodeCatalogService;
         this.strategyExecutionService = strategyExecutionService;
         this.strategySimulationBoundsService = strategySimulationBoundsService;
+        this.strategySimulationRateLimiter = strategySimulationRateLimiter;
         this.objectMapper = objectMapper;
     }
 
@@ -77,13 +83,16 @@ public class StrategyController {
     }
 
     @PostMapping("/simulate")
-    public StrategySimulationResultDto simulate(@RequestBody StrategySimulationRequestDto requestDto) {
+    public StrategySimulationResultDto simulate(
+            @RequestBody StrategySimulationRequestDto requestDto,
+            HttpServletRequest httpServletRequest) {
         if (requestDto == null || requestDto.strategy() == null) {
             throw new StrategyValidationException("Simulation strategy is required.");
         }
         if (requestDto.simulation() == null) {
             throw new StrategyValidationException("Simulation config is required.");
         }
+        strategySimulationRateLimiter.checkAllowed(resolveSimulationClientKey(httpServletRequest));
 
         StrategySimulationConfig simulationConfig = new StrategySimulationConfig(
                 requestDto.simulation().startDate(),
@@ -136,5 +145,29 @@ public class StrategyController {
                 message == null ? "Strategy execution failed." : message,
                 exception.details());
         return ResponseEntity.status(exception.httpStatus()).body(error);
+    }
+
+    @ExceptionHandler(SimulationRateLimitException.class)
+    public ResponseEntity<ApiErrorDto> handleSimulationRateLimitError(SimulationRateLimitException exception) {
+        long retryAfterMs = exception.getRetryAfterMs();
+        long retryAfterSeconds = Math.max(1, (long) Math.ceil(retryAfterMs / 1000.0));
+        String message = exception.getMessage();
+        ApiErrorDto error = new ApiErrorDto(
+                "simulation_rate_limited",
+                message == null ? "Strategy simulations are limited to one run every 5 seconds." : message,
+                List.of("retryAfterMs=" + retryAfterMs));
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(retryAfterSeconds))
+                .body(error);
+    }
+
+    private String resolveSimulationClientKey(HttpServletRequest httpServletRequest) {
+        String forwardedFor = httpServletRequest.getHeader("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isBlank()) {
+            int separatorIndex = forwardedFor.indexOf(',');
+            return (separatorIndex >= 0 ? forwardedFor.substring(0, separatorIndex) : forwardedFor).trim();
+        }
+        String remoteAddress = httpServletRequest.getRemoteAddr();
+        return remoteAddress == null || remoteAddress.isBlank() ? "unknown" : remoteAddress;
     }
 }

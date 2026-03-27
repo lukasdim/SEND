@@ -20,13 +20,13 @@ let run context =
   let* ticker = Executor.expect_string_field context "ticker" in
   let* field = Executor.expect_string_field context "field" in
   match context.Executor.simulation with
-  | Some simulation -> (
+  | Some simulation -> begin
       let* date = Executor.resolve_effective_date context ~explicit_field_name:"date" in
       match simulation.lookup_price_value ~ticker ~field ~date with
       | Some value -> Executor.single_output 0 (Node.normalize_number value)
       | None ->
-          Error (Executor.Message ("No share price found for ticker `" ^ ticker ^ "` on `" ^ date ^ "`.")))
-      )
+          Error (Executor.Message ("No share price found for ticker `" ^ ticker ^ "` on `" ^ date ^ "`." ))
+    end
   | None ->
       let* date = Executor.expect_string_field context "date" in
       let reader = Market_data_reader.connect_from_env () in

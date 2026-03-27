@@ -40,7 +40,7 @@ let run context =
   let* ticker = Executor.expect_string_field context "ticker" in
   let* field = Executor.expect_string_field context "field" in
   match context.Executor.simulation with
-  | Some simulation -> (
+  | Some simulation -> begin
       let* report_date = Executor.resolve_effective_date context ~explicit_field_name:"reportDate" in
       match simulation.lookup_fundamentals_value ~ticker ~field ~report_date with
       | Some value -> Executor.single_output 0 (Node.normalize_number value)
@@ -53,8 +53,8 @@ let run context =
                ^ field
                ^ "`, ticker `"
                ^ ticker
-               ^ "`.")))
-      )
+               ^ "`." ))
+    end
   | None ->
       let* report_date = Executor.expect_string_field context "reportDate" in
       let reader = Market_data_reader.connect_from_env () in

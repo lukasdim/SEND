@@ -712,6 +712,10 @@ function createReplayPreviewLines(
     return traceDay.warnings.slice(0, 3);
   }
 
+  if (nextLines.length === 0) {
+    return ["No node output values changed from the previous day."];
+  }
+
   return nextLines;
 }
 
@@ -1401,11 +1405,13 @@ function ReplayTimeline({
             </div>
           ))
         ) : (
-          <div style={{ fontSize: 12, color: UI_TEXT_SECONDARY }}>No output updates were recorded for this day.</div>
+          <div style={{ fontSize: 12, color: UI_TEXT_SECONDARY }}>
+            No node output values changed from the previous day.
+          </div>
         )}
       </div>
 
-      <div style={{ position: "relative", overflowX: "auto", paddingTop: 8 }}>
+      <div style={{ position: "relative", overflowX: "auto", paddingTop: 8, width: "100%", minWidth: 0 }}>
         <div
           style={{
             position: "absolute",
@@ -2497,8 +2503,18 @@ function SandboxInner() {
         </pre>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, height: "100%", width: "100%", display: "flex", flexDirection: "column" }}>
-        <div ref={canvasWrapperRef} style={{ flex: 1, minHeight: 0, height: "100%", width: "100%" }}>
+      <div
+        style={{
+          flex: "1 1 0",
+          minWidth: 0,
+          minHeight: 0,
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+        <div ref={canvasWrapperRef} style={{ flex: 1, minWidth: 0, minHeight: 0, height: "100%", width: "100%" }}>
           <ReactFlow
             nodeTypes={nodeTypes}
             nodes={displayNodes}

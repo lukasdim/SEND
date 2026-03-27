@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import type { CSSProperties } from "react";
-import { Handle, Position, type Edge, type NodeProps, type NodeTypes, useReactFlow, useStore } from "reactflow";
+import { Handle, Position, type Edge, type NodeProps, type NodeTypes, useReactFlow, useStore, useUpdateNodeInternals } from "reactflow";
 import {
   NODE_HANDLE_STYLE,
   UI_CANVAS,
@@ -242,6 +242,7 @@ function NodeHeader({ visual, name }: { visual: NodeVisual; name: string }) {
 
 function DynamicNode({ id, data }: NodeProps<NodeData>) {
   const { setNodes } = useReactFlow();
+  const updateNodeInternals = useUpdateNodeInternals();
   const edges = useStore((state) => state.edges);
 
   const inputPorts = useMemo(() => data.inputs ?? [], [data.inputs]);
@@ -364,6 +365,20 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
       })
     );
   }, [id, isReadOnly, normalizedFieldValues, setNodes]);
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [
+    id,
+    updateNodeInternals,
+    data.inputs,
+    data.outputs,
+    data.dataFields,
+    data.runtimeResult,
+    data.runtimeResultMeta,
+    data.errorState,
+    data.readOnly,
+  ]);
 
   return (
     <div

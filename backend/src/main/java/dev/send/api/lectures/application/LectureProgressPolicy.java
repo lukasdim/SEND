@@ -1,10 +1,9 @@
 package dev.send.api.lectures.application;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-
+import java.util.LinkedHashMap;
 import org.springframework.stereotype.Component;
 
 import dev.send.api.lectures.domain.LectureModels.LectureCheckpointState;
@@ -58,5 +57,14 @@ public class LectureProgressPolicy {
                 finalUnlockedIndex,
                 completedCheckpointIds,
                 Map.copyOf(activeCheckpointState));
+    }
+
+    public LectureProgress constrainClientUpdate(
+            LectureDefinition lecture,
+            LectureProgress currentProgress,
+            LectureProgress requestedProgress) {
+        LectureProgress normalizedCurrent = normalizeProgress(lecture, currentProgress);
+        normalizeProgress(lecture, requestedProgress);
+        return normalizedCurrent;
     }
 }

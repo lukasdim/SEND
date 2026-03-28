@@ -260,7 +260,7 @@ class StrategyApiIntegrationTests {
                 .thenReturn(new OcamlExecutionResponse("ok", "simulate_graph", result, null, null, java.util.List.of()));
 
         mockMvc.perform(post("/api/strategies/simulate")
-                        .header("X-Forwarded-For", "198.51.100.10")
+                        .header("X-Forwarded-For", "198.51.100.77")
                         .contentType(APPLICATION_JSON)
                         .content("""
                                 {
@@ -290,6 +290,107 @@ class StrategyApiIntegrationTests {
                 .andExpect(jsonPath("$.finalNodeValues.buy-1.executed").value(true))
                 .andExpect(jsonPath("$.trace[0].date").value("2024-01-02"))
                 .andExpect(jsonPath("$.warnings[0]").value("Skipped sell on 2024-01-03."));
+    }
+
+    @Test
+    void rejectsSimulationsThatFailServerSideBoundsValidation() throws Exception {
+        doThrow(new dev.send.api.strategy.application.StrategyValidationException(
+                "Simulations are limited to a maximum six-month range."))
+                .when(strategySimulationBoundsService)
+                .validateSimulationRequest(any(dev.send.api.worker.application.StrategySimulationConfig.class));
+
+        mockMvc.perform(post("/api/strategies/simulate")
+                        .header("X-Forwarded-For", "198.51.100.10")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "strategy": {
+                                    "id": "draft",
+                                    "nodes": [
+                                      {
+                                        "id": "a",
+                                        "type": "const_bool",
+                                        "position": { "x": 0, "y": 0 },
+                                        "data": { "value": true }
+                                      }
+                                    ],
+                                    "edges": []
+                                  },
+                                  "simulation": {
+                                    "startDate": "2024-01-01",
+                                    "endDate": "2024-09-01",
+                                    "initialCash": 1000.0,
+                                    "includeTrace": true
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("strategy_validation_failed"))
+                .andExpect(jsonPath("$.message").value("Simulations are limited to a maximum six-month range."));
+    }
+
+    @Test
+    void ignoresSpoofedForwardedForHeadersFromUntrustedRemoteAddresses() throws Exception {
+        ObjectNode result = objectMapper.createObjectNode();
+        result.putObject("summary")
+                .put("executedDays", 2)
+                .put("finalEquity", 1035.5);
+        result.putObject("portfolio")
+                .put("cash", 900.0);
+        result.putObject("finalNodeValues")
+                .putObject("buy-1")
+                .put("executed", true);
+        result.putArray("trace").addObject().put("date", "2024-01-02");
+        result.putArray("warnings");
+
+        when(ocamlWorkerClient.simulateGraph(
+                        any(StrategyDocument.class),
+                        any(dev.send.api.worker.application.StrategySimulationConfig.class)))
+                .thenReturn(new OcamlExecutionResponse("ok", "simulate_graph", result, null, null, java.util.List.of()));
+
+        String payload = """
+                {
+                  "strategy": {
+                    "id": "draft",
+                    "nodes": [
+                      {
+                        "id": "a",
+                        "type": "const_bool",
+                        "position": { "x": 0, "y": 0 },
+                        "data": { "value": true }
+                      }
+                    ],
+                    "edges": []
+                  },
+                  "simulation": {
+                    "startDate": "2024-01-01",
+                    "endDate": "2024-01-31",
+                    "initialCash": 1000.0,
+                    "includeTrace": true
+                  }
+                }
+                """;
+
+        mockMvc.perform(post("/api/strategies/simulate")
+                        .with(request -> {
+                            request.setRemoteAddr("198.51.100.200");
+                            return request;
+                        })
+                        .header("X-Forwarded-For", "203.0.113.10")
+                        .contentType(APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/strategies/simulate")
+                        .with(request -> {
+                            request.setRemoteAddr("198.51.100.200");
+                            return request;
+                        })
+                        .header("X-Forwarded-For", "203.0.113.11")
+                        .contentType(APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("simulation_rate_limited"));
     }
 
     @Test

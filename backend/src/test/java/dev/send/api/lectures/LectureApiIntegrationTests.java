@@ -8,7 +8,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Base64;
 
 import org.junit.jupiter.api.BeforeEach;
 import jakarta.servlet.http.Cookie;
@@ -59,6 +61,29 @@ class LectureApiIntegrationTests {
     }
 
     @Test
+    void ignoresUnsignedAnonymousProgressCookies() throws Exception {
+        String unsignedCookiePayload = Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString("""
+                        {
+                          "foundations--market-graph-basics": {
+                            "lectureId": "foundations--market-graph-basics",
+                            "highestUnlockedSublectureIndex": 99,
+                            "completedCheckpointIds": ["checkpoint-place-buy"],
+                            "activeCheckpointState": {}
+                          }
+                        }
+                        """.getBytes(StandardCharsets.UTF_8));
+
+        mockMvc.perform(get("/api/lectures/foundations/market-graph-basics")
+                        .header("Cookie", "send_lecture_progress=" + unsignedCookiePayload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sublectures[1].contentSource").doesNotExist())
+                .andExpect(jsonPath("$.progress.highestUnlockedSublectureIndex").value(0))
+                .andExpect(jsonPath("$.progress.completedCheckpointIds").isEmpty());
+    }
+
+    @Test
     void anonymousCheckpointVerificationStillPersistsCookieBackedProgress() throws Exception {
         MvcResult verifyResult = mockMvc.perform(post("/api/lectures/foundations--market-graph-basics/checkpoints/checkpoint-place-buy/verify")
                         .contentType(APPLICATION_JSON)
@@ -76,6 +101,42 @@ class LectureApiIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sublectures[1].contentSource").exists())
                 .andExpect(jsonPath("$.progress.highestUnlockedSublectureIndex").value(1));
+    }
+
+    @Test
+    void anonymousProgressSaveCannotAdvanceUnlockState() throws Exception {
+        MvcResult saveResult = mockMvc.perform(post("/api/lectures/foundations--market-graph-basics/progress")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "lectureId": "foundations--market-graph-basics",
+                                  "highestUnlockedSublectureIndex": 99,
+                                  "completedCheckpointIds": ["checkpoint-place-buy"],
+                                  "activeCheckpointState": {
+                                    "checkpoint-place-buy": {
+                                      "lastFeedback": "forged",
+                                      "lastAttemptedAt": "2026-03-28T00:00:00Z",
+                                      "passed": true
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(cookie().exists("send_lecture_progress"))
+                .andExpect(jsonPath("$.highestUnlockedSublectureIndex").value(0))
+                .andExpect(jsonPath("$.completedCheckpointIds").isEmpty())
+                .andExpect(jsonPath("$.activeCheckpointState").isEmpty())
+                .andReturn();
+
+        Cookie savedCookie = parseLectureProgressCookie(saveResult);
+
+        mockMvc.perform(get("/api/lectures/foundations/market-graph-basics")
+                        .cookie(savedCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sublectures[1].contentSource").doesNotExist())
+                .andExpect(jsonPath("$.progress.highestUnlockedSublectureIndex").value(0))
+                .andExpect(jsonPath("$.progress.completedCheckpointIds").isEmpty())
+                .andExpect(jsonPath("$.progress.activeCheckpointState").isEmpty());
     }
 
     @Test

@@ -40,7 +40,7 @@ These modules are intended to be broad and intesive, however, time intensive to 
 - In Docker Compose, `OCAML_WORKER_COMMAND=/app/worker` is the supported container runtime configuration.
 - Outside Docker, the backend may still rely on the existing local source checkout fallback when `ocaml.worker.command` is left empty.
 - Docker Compose is the supported local development path for app configuration.
-- Export the required environment variables before running `docker compose up --build`: `SEND_DB_PASSWORD`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `APP_AUTH_SUPABASE_ISSUER_URI`, `APP_AUTH_SUPABASE_JWK_SET_URI` or `APP_AUTH_SUPABASE_JWT_SECRET`, and optionally `APP_AUTH_SUPABASE_AUDIENCE`.
+- Export the required environment variables before running `docker compose up --build`: `SEND_DB_PASSWORD`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `APP_AUTH_SUPABASE_ISSUER_URI`, `APP_AUTH_SUPABASE_JWK_SET_URI` or `APP_AUTH_SUPABASE_JWT_SECRET`, `APP_LECTURES_PROGRESS_COOKIE_SECRET`, and optionally `APP_AUTH_SUPABASE_AUDIENCE`.
 - The frontend now talks to the backend through the bundled Nginx reverse proxy at the same origin, so `VITE_API_URL` should normally be left empty in Docker Compose.
 - Supabase projects using legacy `HS256` signing should set `APP_AUTH_SUPABASE_JWT_SECRET` and may leave `APP_AUTH_SUPABASE_JWK_SET_URI` empty. Projects using asymmetric signing should keep `APP_AUTH_SUPABASE_JWK_SET_URI` set and leave `APP_AUTH_SUPABASE_JWT_SECRET` empty.
 - Only the frontend is published to the host, and it is bound to `127.0.0.1:5173` by default. The backend and database stay on an internal Docker network.

@@ -1,12 +1,15 @@
+/* eslint-disable react-refresh/only-export-components */
 import { useEffect, useMemo } from "react";
 import type { CSSProperties } from "react";
 import { Handle, Position, type Edge, type NodeProps, type NodeTypes, useReactFlow, useStore, useUpdateNodeInternals } from "reactflow";
 import {
   NODE_HANDLE_STYLE,
   UI_CANVAS,
+  UI_CARD,
   UI_ELEVATED,
   UI_TEXT_PRIMARY,
   UI_TEXT_SECONDARY,
+  withAlpha,
 } from "./base/nodeCardStyle";
 
 export type JsonScalar = string | number | boolean | null;
@@ -248,7 +251,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
   const inputPorts = useMemo(() => data.inputs ?? [], [data.inputs]);
   const outputPorts = useMemo(() => data.outputs ?? [], [data.outputs]);
   const dataFields = useMemo(() => data.dataFields ?? [], [data.dataFields]);
-  const fieldValues = data.fieldValues ?? {};
+  const fieldValues = useMemo(() => data.fieldValues ?? {}, [data.fieldValues]);
   const inlineInputValues = data.inlineInputValues ?? {};
   const runtimeResult = data.runtimeResult;
   const hasRuntimeResult = runtimeResult && Object.keys(runtimeResult).length > 0;
@@ -258,7 +261,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
   const hasErrorState = Boolean(errorState);
   const issueColor = errorState?.severity === "warning" ? "#E8A33B" : "#E24B4A";
   const isReadOnly = data.readOnly === true;
-  const shouldGlowRuntimeResult = runtimeResultMeta?.glow ?? hasRuntimeResult;
+  const shouldGlowRuntimeResult: boolean = Boolean(runtimeResultMeta?.glow ?? hasRuntimeResult);
   const runtimeResultLabel = runtimeResultMeta?.label ?? "Updated";
 
   const visual = getNodeVisualForTheme(data.theme);
@@ -512,6 +515,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
                 const value = effectiveFieldValues[field.name] ?? toInitialFieldValue(field);
                 const selectableOptions = getSelectableOptions(field, effectiveFieldValues);
                 const fieldLabel = getFieldLabel(field);
+                const boolValue = value === true;
 
                 return (
                   <label
@@ -548,7 +552,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
                         <input
                           className="nodrag"
                           type="checkbox"
-                          checked={Boolean(value)}
+                          checked={boolValue}
                           onChange={(event) => setFieldValue(field.name, event.target.checked)}
                           disabled={isReadOnly}
                           style={{
@@ -559,7 +563,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
                           }}
                         />
                         <span style={{ fontSize: 11, color: UI_TEXT_SECONDARY }}>
-                          {Boolean(value) ? "true" : "false"}
+                          {boolValue ? "true" : "false"}
                         </span>
                       </label>
                     ) : selectableOptions ? (
@@ -688,70 +692,12 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
       </div>
 
       {hasRuntimeResult && (
-        <div
-          style={{
-            position: "relative",
-            zIndex: 4,
-            marginTop: 8,
-            marginLeft: 16,
-            marginRight: 16,
-            padding: "22px 14px 12px",
-            borderRadius: 8,
-            background: UI_ELEVATED,
-            border: `1px solid ${visual.border}`,
-            boxShadow: "0 12px 26px rgba(0, 0, 0, 0.28)",
-            pointerEvents: "none",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 8,
-              marginBottom: 6,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: visual.sub,
-              }}
-            >
-              Output
-            </div>
-            <div
-              style={{
-                padding: "3px 8px",
-                borderRadius: 999,
-                background: `${visual.border}22`,
-                color: UI_TEXT_PRIMARY,
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: "0.04em",
-                textTransform: "uppercase",
-              }}
-            >
-              {runtimeResultLabel}
-            </div>
-          </div>
-          <pre
-            style={{
-              margin: 0,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              color: UI_TEXT_PRIMARY,
-              fontSize: 11,
-              lineHeight: 1.35,
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-            }}
-          >
-            {JSON.stringify(runtimeResult, null, 2)}
-          </pre>
-        </div>
+        <NodeOutputPanel
+          visual={visual}
+          runtimeResult={runtimeResult}
+          shouldGlow={shouldGlowRuntimeResult}
+          runtimeResultLabel={runtimeResultLabel}
+        />
       )}
     </div>
   );
@@ -772,6 +718,143 @@ function inputStyle(visual: NodeVisual): CSSProperties {
     width: "100%",
     boxShadow: `inset 0 0 0 1px ${visual.border}10`,
   };
+}
+
+const MAX_RUNTIME_VALUE_LENGTH = 26;
+
+function formatRuntimeValue(value: JsonScalar): string {
+  if (value === null) return "null";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") return value.toString();
+  if (typeof value === "string") return truncateValue(value);
+  return truncateValue(JSON.stringify(value));
+}
+
+function formatOutputLabel(key: string): string {
+  const spaced = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+function truncateValue(value: string): string {
+  if (value.length <= MAX_RUNTIME_VALUE_LENGTH) return value;
+  return `${value.slice(0, MAX_RUNTIME_VALUE_LENGTH - 3)}...`;
+}
+
+type NodeOutputPanelProps = {
+  visual: NodeVisual;
+  runtimeResult: NodeRuntimeResult;
+  shouldGlow: boolean;
+  runtimeResultLabel: string;
+};
+
+function NodeOutputPanel({
+  visual,
+  runtimeResult,
+  shouldGlow,
+  runtimeResultLabel,
+}: NodeOutputPanelProps) {
+  const entries = Object.entries(runtimeResult);
+  if (entries.length === 0) return null;
+
+  const glowBorder = shouldGlow ? `0 0 0 1px ${visual.border}, 0 0 12px ${visual.border}45` : undefined;
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        zIndex: 4,
+        marginTop: 8,
+        marginLeft: 16,
+        marginRight: 16,
+        padding: "12px 14px",
+        borderRadius: 10,
+        background: UI_ELEVATED,
+        border: `1px solid ${visual.border}`,
+        boxShadow: glowBorder ?? "0 6px 16px rgba(0, 0, 0, 0.3)",
+        pointerEvents: "none",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          marginBottom: 6,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: visual.sub,
+          }}
+        >
+          Output
+        </div>
+        <div
+          style={{
+            padding: "3px 8px",
+            borderRadius: 999,
+            background: `${visual.border}22`,
+            border: `1px solid ${visual.border}`,
+            color: UI_TEXT_PRIMARY,
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.04em",
+            textTransform: "uppercase",
+          }}
+        >
+          {runtimeResultLabel}
+        </div>
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gap: 4,
+          background: withAlpha(UI_CARD, 0.4),
+          borderRadius: 6,
+          padding: "6px 8px",
+        }}
+      >
+        {entries.map(([key, value]) => (
+          <div
+            key={key}
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              justifyContent: "space-between",
+              gap: 8,
+              fontSize: 11,
+              color: UI_TEXT_PRIMARY,
+              lineHeight: 1.3,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 9,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: UI_TEXT_SECONDARY,
+              }}
+            >
+              {formatOutputLabel(key)}
+            </span>
+            <span
+              style={{
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                textAlign: "right",
+              }}
+            >
+              {formatRuntimeValue(value)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function hasIncomingEdgeForPort(edges: Edge[], nodeId: string, port: NodeIoPort, inputCount: number): boolean {

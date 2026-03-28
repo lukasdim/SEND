@@ -25,11 +25,11 @@ import dev.send.api.strategy.domain.StrategySummary;
 
 @Component
 public class StrategyDocumentMapper {
-    private final ObjectMapper objectMapper;
+  private final ObjectMapper objectMapper;
 
-    public StrategyDocumentMapper(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
-    }
+  public StrategyDocumentMapper(ObjectMapper objectMapper) {
+    this.objectMapper = objectMapper;
+  }
 
     public StrategyDocument toDomain(StrategyDocumentDto dto) {
         return toDomain(dto.id(), dto.nodes(), dto.edges());
@@ -107,43 +107,43 @@ public class StrategyDocumentMapper {
                 strategySummary.updatedAt());
     }
 
-    public StrategyDocumentDto toDto(StrategyDocument strategyDocument) {
-        return new StrategyDocumentDto(
-                strategyDocument.id(),
-                strategyDocument.nodes().stream()
-                        .map(node -> new GraphNodeDto(
-                                node.id(),
-                                node.type(),
-                                toDto(node.position()),
-                                node.data()))
-                        .toList(),
-                strategyDocument.edges().stream()
-                        .map(edge -> new GraphEdgeDto(
-                                edge.id(),
-                                edge.source(),
-                                edge.target(),
-                                edge.sourceHandle(),
-                                edge.targetHandle(),
-                                edge.sourcePort(),
-                                edge.targetPort()))
-                        .toList());
-    }
+  public StrategyDocumentDto toDto(StrategyDocument strategyDocument) {
+    return new StrategyDocumentDto(
+        strategyDocument.id(),
+        strategyDocument.nodes().stream()
+            .map(
+                node ->
+                    new GraphNodeDto(node.id(), node.type(), toDto(node.position()), node.data()))
+            .toList(),
+        strategyDocument.edges().stream()
+            .map(
+                edge ->
+                    new GraphEdgeDto(
+                        edge.id(),
+                        edge.source(),
+                        edge.target(),
+                        edge.sourceHandle(),
+                        edge.targetHandle(),
+                        edge.sourcePort(),
+                        edge.targetPort()))
+            .toList());
+  }
 
-    private NodePosition toDomain(NodePositionDto position) {
-        if (position == null) {
-            throw new StrategyValidationException("Node position is required.");
-        }
-        return new NodePosition(position.x(), position.y());
+  private NodePosition toDomain(NodePositionDto position) {
+    if (position == null) {
+      throw new StrategyValidationException("Node position is required.");
     }
+    return new NodePosition(position.x(), position.y());
+  }
 
-    private NodePositionDto toDto(NodePosition position) {
-        return new NodePositionDto(position.x(), position.y());
-    }
+  private NodePositionDto toDto(NodePosition position) {
+    return new NodePositionDto(position.x(), position.y());
+  }
 
-    private JsonNode normalizeData(JsonNode data) {
-        if (data != null && data.isObject()) {
-            return data.deepCopy();
-        }
-        return objectMapper.createObjectNode();
+  private JsonNode normalizeData(JsonNode data) {
+    if (data != null && data.isObject()) {
+      return data.deepCopy();
     }
+    return objectMapper.createObjectNode();
+  }
 }

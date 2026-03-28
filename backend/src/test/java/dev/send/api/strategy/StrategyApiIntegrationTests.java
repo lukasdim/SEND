@@ -39,17 +39,13 @@ import dev.send.api.worker.infra.ocaml.OcamlWorkerClient;
 @SpringBootTest
 @AutoConfigureMockMvc
 class StrategyApiIntegrationTests {
-    @Autowired
-    private MockMvc mockMvc;
+  @Autowired private MockMvc mockMvc;
 
-    @Autowired
-    private ObjectMapper objectMapper;
+  @Autowired private ObjectMapper objectMapper;
 
-    @MockBean
-    private OcamlWorkerClient ocamlWorkerClient;
+  @MockBean private OcamlWorkerClient ocamlWorkerClient;
 
-    @MockBean
-    private StrategySimulationBoundsService strategySimulationBoundsService;
+  @MockBean private StrategySimulationBoundsService strategySimulationBoundsService;
 
     @MockBean
     private JwtDecoder jwtDecoder;

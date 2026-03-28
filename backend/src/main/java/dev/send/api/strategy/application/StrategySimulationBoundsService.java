@@ -15,9 +15,9 @@ public class StrategySimulationBoundsService {
 
     private final StockPriceJdbcRepository stockPriceJdbcRepository;
 
-    public StrategySimulationBoundsService(StockPriceJdbcRepository stockPriceJdbcRepository) {
-        this.stockPriceJdbcRepository = stockPriceJdbcRepository;
-    }
+  public StrategySimulationBoundsService(StockPriceJdbcRepository stockPriceJdbcRepository) {
+    this.stockPriceJdbcRepository = stockPriceJdbcRepository;
+  }
 
     public StrategySimulationBounds getSimulationBounds() {
         return stockPriceJdbcRepository.findGlobalPriceCoverage()

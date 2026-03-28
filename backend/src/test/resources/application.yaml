@@ -1,4 +1,6 @@
 spring:
+  main:
+    allow-bean-definition-overriding: true
   datasource:
     url: jdbc:h2:mem:send;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
     username: sa
@@ -28,3 +30,10 @@ market-data:
 strategy:
   rate-limit:
     simulation-cooldown-ms: 5000
+
+app:
+  auth:
+    supabase:
+      issuer-uri: https://test-project.supabase.co/auth/v1
+      jwk-set-uri: https://test-project.supabase.co/auth/v1/.well-known/jwks.json
+      audience: authenticated

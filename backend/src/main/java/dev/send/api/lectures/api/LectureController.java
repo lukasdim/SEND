@@ -91,7 +91,7 @@ public class LectureController {
             HttpServletResponse response) {
         LectureDefinition lecture = lectureService.getById(lectureId);
         return lectureDtoMapper.toProgressDto(
-                lectureProgressService.saveProgress(
+                lectureProgressService.saveClientProgress(
                         lecture,
                         lectureDtoMapper.toDomain(new LectureProgressDto(
                                 progressUpdateDto.lectureId(),

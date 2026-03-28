@@ -1,21 +1,40 @@
 import { SANDBOX_STRATEGIES_API } from "../config/sandboxConfig";
 import type { CategoryTheme, JsonScalar, NodeIoCatalog, NodeRuntimeResult } from "../components/nodes/NodeTypes";
+import { fetchWithAuth, readJson, readJsonOrThrowApiError } from "./http";
 
-const API_URL = import.meta.env.VITE_API_URL?.trim() || "";
-
-type ApiErrorPayload = {
-  code?: unknown;
-  message?: unknown;
-  details?: unknown;
-};
-
-export type ApiError = {
-  code: string;
-  message: string;
-  details: string[];
-};
+export type { ApiError } from "./http";
 
 export type StrategyTestResults = Record<string, NodeRuntimeResult>;
+
+export type StrategyGraphNode = {
+  id: string;
+  type: string;
+  position: {
+    x: number;
+    y: number;
+  };
+  data: Record<string, JsonScalar>;
+};
+
+export type StrategyGraphEdge = {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string;
+  targetHandle?: string;
+};
+
+export type StrategySummary = {
+  id: string;
+  name: string;
+  kind: "template" | "user";
+  updatedAt: string;
+};
+
+export type StoredStrategy = StrategySummary & {
+  nodes: StrategyGraphNode[];
+  edges: StrategyGraphEdge[];
+};
 
 export type StrategySimulationConfig = {
   startDate: string;
@@ -98,27 +117,91 @@ export type StrategySimulationResult = {
   warnings: string[];
 };
 
-export async function login(email: string, password: string) {
-  const res = await fetch(`${API_URL}/auth/login`, {
+export async function fetchStrategySummaries(signal?: AbortSignal): Promise<StrategySummary[]> {
+  const response = await fetchWithAuth(SANDBOX_STRATEGIES_API.listStrategiesUrl, {
+    method: "GET",
+    authMode: "optional",
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch strategies (${response.status})`);
+  }
+
+  const payload = (await readJson<unknown>(response));
+  if (!Array.isArray(payload)) {
+    throw new Error("Malformed strategy summary response.");
+  }
+
+  return payload.flatMap((strategy) => (isStrategySummary(strategy) ? [strategy] : []));
+}
+
+export async function fetchStoredStrategy(strategyId: string, signal?: AbortSignal): Promise<StoredStrategy> {
+  const response = await fetchWithAuth(SANDBOX_STRATEGIES_API.strategyByIdUrl(strategyId), {
+    method: "GET",
+    authMode: "optional",
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch strategy (${response.status})`);
+  }
+
+  const payload = (await readJson<unknown>(response));
+  if (!isStoredStrategy(payload)) {
+    throw new Error("Malformed strategy data.");
+  }
+  return payload;
+}
+
+export async function createStoredStrategy(
+  payload: Pick<StoredStrategy, "name" | "nodes" | "edges">,
+  signal?: AbortSignal
+): Promise<StoredStrategy> {
+  const response = await fetchWithAuth(SANDBOX_STRATEGIES_API.listStrategiesUrl, {
     method: "POST",
+    authMode: "required",
     headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify(payload),
+    signal,
   });
 
-  return res.json();
+  const json = await readJsonOrThrowApiError<unknown>(response);
+  if (!isStoredStrategy(json)) {
+    throw new Error("Malformed stored strategy response.");
+  }
+  return json;
+}
+
+export async function updateStoredStrategy(
+  strategyId: string,
+  payload: Pick<StoredStrategy, "name" | "nodes" | "edges">,
+  signal?: AbortSignal
+): Promise<StoredStrategy> {
+  const response = await fetchWithAuth(SANDBOX_STRATEGIES_API.strategyByIdUrl(strategyId), {
+    method: "PUT",
+    authMode: "required",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  const json = await readJsonOrThrowApiError<unknown>(response);
+  if (!isStoredStrategy(json)) {
+    throw new Error("Malformed stored strategy response.");
+  }
+  return json;
 }
 
 export async function fetchNodeIoCatalog(signal?: AbortSignal): Promise<NodeIoCatalog> {
-  const response = await fetch(SANDBOX_STRATEGIES_API.nodeIoUrl, {
+  const response = await fetchWithAuth(SANDBOX_STRATEGIES_API.nodeIoUrl, {
     method: "GET",
+    authMode: "public",
     signal,
   });
   if (!response.ok) {
     throw new Error(`Failed to fetch node catalog (${response.status})`);
   }
 
-  const payload = (await response.json()) as unknown;
+  const payload = (await readJson<unknown>(response));
   if (!isNodeIoCatalog(payload)) {
     throw new Error("Malformed node catalog payload.");
   }
@@ -126,15 +209,16 @@ export async function fetchNodeIoCatalog(signal?: AbortSignal): Promise<NodeIoCa
 }
 
 export async function fetchSimulationBounds(signal?: AbortSignal): Promise<StrategySimulationBounds> {
-  const response = await fetch(SANDBOX_STRATEGIES_API.simulationBoundsUrl, {
+  const response = await fetchWithAuth(SANDBOX_STRATEGIES_API.simulationBoundsUrl, {
     method: "GET",
+    authMode: "public",
     signal,
   });
   if (!response.ok) {
     throw new Error(`Failed to fetch simulation bounds (${response.status})`);
   }
 
-  const payload = (await response.json()) as unknown;
+  const payload = (await readJson<unknown>(response));
   if (!isStrategySimulationBounds(payload)) {
     throw new Error("Malformed simulation bounds payload.");
   }
@@ -145,18 +229,15 @@ export async function testStrategy(
   payload: unknown,
   signal?: AbortSignal
 ): Promise<StrategyTestResults> {
-  const response = await fetch(SANDBOX_STRATEGIES_API.testStrategyUrl, {
+  const response = await fetchWithAuth(SANDBOX_STRATEGIES_API.testStrategyUrl, {
     method: "POST",
+    authMode: "public",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
     signal,
   });
 
-  if (!response.ok) {
-    throw await toApiError(response);
-  }
-
-  const json = (await response.json()) as unknown;
+  const json = await readJsonOrThrowApiError<unknown>(response);
   if (!isStrategyTestResults(json)) {
     throw new Error("Malformed strategy test response.");
   }
@@ -167,46 +248,19 @@ export async function simulateStrategy(
   payload: unknown,
   signal?: AbortSignal
 ): Promise<StrategySimulationResult> {
-  const response = await fetch(SANDBOX_STRATEGIES_API.simulateStrategyUrl, {
+  const response = await fetchWithAuth(SANDBOX_STRATEGIES_API.simulateStrategyUrl, {
     method: "POST",
+    authMode: "public",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
     signal,
   });
 
-  if (!response.ok) {
-    throw await toApiError(response);
-  }
-
-  const json = (await response.json()) as unknown;
+  const json = await readJsonOrThrowApiError<unknown>(response);
   if (!isStrategySimulationResult(json)) {
     throw new Error("Malformed strategy simulation response.");
   }
   return json;
-}
-
-async function toApiError(response: Response): Promise<ApiError> {
-  const fallbackMessage = `Request failed (${response.status})`;
-
-  try {
-    const payload = (await response.json()) as ApiErrorPayload;
-    return {
-      code: typeof payload.code === "string" && payload.code.length > 0 ? payload.code : "request_failed",
-      message:
-        typeof payload.message === "string" && payload.message.length > 0
-          ? payload.message
-          : fallbackMessage,
-      details: Array.isArray(payload.details)
-        ? payload.details.flatMap((detail) => (typeof detail === "string" ? [detail] : []))
-        : [],
-    };
-  } catch {
-    return {
-      code: "request_failed",
-      message: fallbackMessage,
-      details: [],
-    };
-  }
 }
 
 function isNodeIoCatalog(payload: unknown): payload is NodeIoCatalog {
@@ -279,6 +333,54 @@ function isNodeIoCatalog(payload: unknown): payload is NodeIoCatalog {
       })
     );
   });
+}
+
+function isStrategySummary(payload: unknown): payload is StrategySummary {
+  return (
+    isRecord(payload) &&
+    typeof payload.id === "string" &&
+    typeof payload.name === "string" &&
+    typeof payload.kind === "string" &&
+    typeof payload.updatedAt === "string" &&
+    (payload.kind === "template" || payload.kind === "user")
+  );
+}
+
+function isStrategyGraphNode(value: unknown): value is StrategyGraphNode {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.type === "string" &&
+    isRecord(value.position) &&
+    typeof value.position.x === "number" &&
+    typeof value.position.y === "number" &&
+    isRecord(value.data) &&
+    Object.values(value.data).every(isJsonScalar)
+  );
+}
+
+function isStrategyGraphEdge(value: unknown): value is StrategyGraphEdge {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.source === "string" &&
+    typeof value.target === "string" &&
+    (value.sourceHandle === undefined || typeof value.sourceHandle === "string") &&
+    (value.targetHandle === undefined || typeof value.targetHandle === "string")
+  );
+}
+
+function isStoredStrategy(payload: unknown): payload is StoredStrategy {
+  if (!isRecord(payload) || !isStrategySummary(payload)) {
+    return false;
+  }
+  const { nodes, edges } = payload as Record<string, unknown>;
+  return (
+    Array.isArray(nodes) &&
+    nodes.every(isStrategyGraphNode) &&
+    Array.isArray(edges) &&
+    edges.every(isStrategyGraphEdge)
+  );
 }
 
 function isStrategyTestResults(payload: unknown): payload is StrategyTestResults {

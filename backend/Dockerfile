@@ -20,11 +20,16 @@ COPY backend/ ./
 RUN gradle bootJar --no-daemon
 
 FROM eclipse-temurin:21-jre-alpine
-RUN apk add --no-cache libpq
+RUN apk add --no-cache libpq \
+    && addgroup -S send \
+    && adduser -S -G send send
 WORKDIR /app
 
 COPY --from=java-builder /src/backend/build/libs/*.jar app.jar
 COPY --from=ocaml-builder /tmp/worker /app/worker
+RUN chown send:send /app/app.jar /app/worker \
+    && chmod 0555 /app/worker
 
+USER send
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]

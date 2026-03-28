@@ -70,7 +70,7 @@ public class LectureCheckpointVerificationService {
                 ruleResult.passed()));
 
         if (!ruleResult.passed()) {
-            LectureProgress failedProgress = lectureProgressService.saveProgress(
+            LectureProgress failedProgress = lectureProgressService.saveTrustedProgress(
                     lecture,
                     new LectureProgress(
                             currentProgress.lectureId(),
@@ -93,7 +93,7 @@ public class LectureCheckpointVerificationService {
             completedCheckpointIds.add(checkpointId);
         }
 
-        LectureProgress passedProgress = lectureProgressService.saveProgress(
+        LectureProgress passedProgress = lectureProgressService.saveTrustedProgress(
                 lecture,
                 new LectureProgress(
                         currentProgress.lectureId(),

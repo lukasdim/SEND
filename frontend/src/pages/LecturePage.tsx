@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import LectureMiniSandbox from "../components/lectures/LectureMiniSandbox";
-import MarkdownContent, { slugifyMarkdownHeading } from "../components/lectures/MarkdownContent";
+import MarkdownContent from "../components/lectures/MarkdownContent";
+import { slugifyMarkdownHeading } from "../components/lectures/markdown-utils";
 import type { LectureDetailResponse, LectureProgress } from "../features/lectures/types";
 import { fetchLectureBySlug, verifyLectureCheckpoint } from "../services/lectureApi";
 import "./LecturePage.css";

@@ -4,9 +4,9 @@ import java.util.List;
 import java.util.Optional;
 
 public interface StrategyRepository {
-    List<StrategyDocument> findAll();
+  List<StrategyDocument> findAll();
 
-    Optional<StrategyDocument> findById(String id);
+  Optional<StrategyDocument> findById(String id);
 
-    StrategyDocument save(StrategyDocument strategyDocument);
+  StrategyDocument save(StrategyDocument strategyDocument);
 }

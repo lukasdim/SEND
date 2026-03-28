@@ -379,7 +379,7 @@ function adjustSimulationRange(
   config: StrategySimulationConfig,
   bounds: StrategySimulationBounds | null = null
 ): StrategySimulationConfig {
-  let startDate = clampIsoDateWithinRange(
+  const startDate = clampIsoDateWithinRange(
     isWeekendIsoDate(config.startDate) ? formatIsoDate(clampToWeekday(toUtcDate(config.startDate), -1)) : config.startDate,
     hasUsableSimulationBounds(bounds) ? bounds.earliestPriceDate : undefined,
     hasUsableSimulationBounds(bounds) ? bounds.latestPriceDate : undefined
@@ -447,11 +447,11 @@ function stripRuntimeResults(nodes: Node[]): Node[] {
       return node;
     }
 
-    const {
-      runtimeResult: _runtimeResult,
-      runtimeResultMeta: _runtimeResultMeta,
-      ...rest
-    } = node.data as NodeData;
+    const nodeData = node.data as NodeData;
+    const rest = { ...nodeData };
+    delete rest.runtimeResult;
+    delete rest.runtimeResultMeta;
+
     return {
       ...node,
       data: rest,
@@ -2835,7 +2835,7 @@ function SandboxInner() {
     } finally {
       setIsStrategySaving(false);
     }
-  }, [currentStrategyId, currentStrategyName, edges, nodes, nodes.length, notifyTransientBanner]);
+  }, [currentStrategyId, currentStrategyName, edges, nodes, notifyTransientBanner]);
 
   const onTestStrategy = useCallback(async () => {
     if (nodes.length === 0) {
@@ -2960,7 +2960,6 @@ function SandboxInner() {
     focusIssue,
     nextStrategyTestAllowedAt,
     nodes,
-    nodes.length,
     notifyTransientBanner,
     simulationBounds,
     simulationConfig,

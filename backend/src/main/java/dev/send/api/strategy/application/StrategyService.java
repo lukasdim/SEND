@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import dev.send.api.auth.CurrentUser;
 import dev.send.api.strategy.domain.StoredStrategy;
@@ -15,7 +16,10 @@ import dev.send.api.strategy.infra.BundledStrategyTemplateCatalog;
 import dev.send.api.strategy.infra.persistence.UserStrategyStore;
 
 @Service
+@Transactional
 public class StrategyService {
+    private static final int MAX_STRATEGY_NAME_LENGTH = 120;
+
     private final BundledStrategyTemplateCatalog bundledStrategyTemplateCatalog;
     private final UserStrategyStore userStrategyStore;
     private final StrategyGraphValidator strategyGraphValidator;
@@ -29,6 +33,7 @@ public class StrategyService {
         this.strategyGraphValidator = strategyGraphValidator;
     }
 
+    @Transactional(readOnly = true)
     public List<StrategySummary> findAll(Optional<CurrentUser> currentUser) {
         List<StrategySummary> templates = bundledStrategyTemplateCatalog.findAll().stream()
                 .map(StoredStrategy::toSummary)
@@ -44,6 +49,7 @@ public class StrategyService {
         return java.util.stream.Stream.concat(templates.stream(), userStrategies.stream()).toList();
     }
 
+    @Transactional(readOnly = true)
     public Optional<StoredStrategy> findById(String id, Optional<CurrentUser> currentUser) {
         Optional<StoredStrategy> template = bundledStrategyTemplateCatalog.findById(id);
         if (template.isPresent()) {
@@ -88,6 +94,11 @@ public class StrategyService {
         if (name == null || name.isBlank()) {
             throw new StrategyValidationException("Strategy name is required.");
         }
-        return name.trim();
+        String normalizedName = name.trim();
+        if (normalizedName.length() > MAX_STRATEGY_NAME_LENGTH) {
+            throw new StrategyValidationException(
+                    "Strategy names are limited to " + MAX_STRATEGY_NAME_LENGTH + " characters.");
+        }
+        return normalizedName;
     }
 }

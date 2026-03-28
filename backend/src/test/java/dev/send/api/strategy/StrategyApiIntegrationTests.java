@@ -164,6 +164,17 @@ class StrategyApiIntegrationTests {
     }
 
     @Test
+    void rejectsOversizedStrategyNamesBeforePersistence() throws Exception {
+        mockMvc.perform(post("/api/strategies")
+                        .header("Authorization", "Bearer valid-user-1")
+                        .contentType(APPLICATION_JSON)
+                        .content(strategyUpsertPayload("A".repeat(121))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("strategy_validation_failed"))
+                .andExpect(jsonPath("$.message").value("Strategy names are limited to 120 characters."));
+    }
+
+    @Test
     void testsCurrentGraphThroughOcamlWorkerAndReturnsFlatNodeResults() throws Exception {
         ObjectNode result = objectMapper.createObjectNode();
         result.putObject("c").put("sum", 5);
@@ -176,6 +187,30 @@ class StrategyApiIntegrationTests {
                         .content(strategyDocumentPayload()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.c.sum").value(5));
+    }
+
+    @Test
+    void rejectsNestedNodeDataBeforeWorkerExecution() throws Exception {
+        mockMvc.perform(post("/api/strategies/test")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "id": "draft",
+                                  "nodes": [
+                                    {
+                                      "id": "a",
+                                      "type": "const_number",
+                                      "position": { "x": 0, "y": 0 },
+                                      "data": { "value": { "nested": true } }
+                                    }
+                                  ],
+                                  "edges": []
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("strategy_validation_failed"))
+                .andExpect(jsonPath("$.message")
+                        .value("Data field 'value' for node a must be a scalar value."));
     }
 
     @Test

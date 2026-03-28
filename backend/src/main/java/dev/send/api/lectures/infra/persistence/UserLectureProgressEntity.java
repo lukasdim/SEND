@@ -10,7 +10,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
@@ -34,12 +33,10 @@ public class UserLectureProgressEntity {
     @Column(name = "highest_unlocked_sublecture_index", nullable = false)
     private int highestUnlockedSublectureIndex;
 
-    @Lob
-    @Column(name = "completed_checkpoint_ids_json", nullable = false)
+    @Column(name = "completed_checkpoint_ids_json", nullable = false, columnDefinition = "TEXT")
     private String completedCheckpointIdsJson = "[]";
 
-    @Lob
-    @Column(name = "active_checkpoint_state_json", nullable = false)
+    @Column(name = "active_checkpoint_state_json", nullable = false, columnDefinition = "TEXT")
     private String activeCheckpointStateJson = "{}";
 
     @Column(name = "created_at", nullable = false)

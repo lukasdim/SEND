@@ -40,4 +40,5 @@ app:
     supabase:
       issuer-uri: ${APP_AUTH_SUPABASE_ISSUER_URI:}
       jwk-set-uri: ${APP_AUTH_SUPABASE_JWK_SET_URI:}
+      jwt-secret: ${APP_AUTH_SUPABASE_JWT_SECRET:}
       audience: ${APP_AUTH_SUPABASE_AUDIENCE:authenticated}

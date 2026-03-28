@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL?.trim() || "";
+const API_URL = (import.meta.env.VITE_API_URL?.trim() || "").replace(/\/+$/, "");
 
 export const SANDBOX_NODE_WIDTH = 240;
 export const SANDBOX_LIBRARY_NODE_WIDTH = 180;

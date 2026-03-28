@@ -20,6 +20,11 @@ import dev.send.api.strategy.domain.StrategyDocument;
 @Component
 public class StrategyGraphValidator {
     private static final Pattern HANDLE_PATTERN = Pattern.compile("^(?:in|out):(\\d+)$");
+    private static final int MAX_NODE_COUNT = 250;
+    private static final int MAX_EDGE_COUNT = 500;
+    private static final int MAX_IDENTIFIER_LENGTH = 120;
+    private static final int MAX_NODE_TYPE_LENGTH = 80;
+    private static final int MAX_DATA_STRING_LENGTH = 256;
 
     private final NodeCatalogService nodeCatalogService;
 
@@ -31,11 +36,20 @@ public class StrategyGraphValidator {
         if (strategyDocument.id() == null || strategyDocument.id().isBlank()) {
             throw new StrategyValidationException("Strategy id is required.");
         }
+        validateTextLength(strategyDocument.id(), "Strategy id", MAX_IDENTIFIER_LENGTH);
         if (strategyDocument.nodes() == null) {
             throw new StrategyValidationException("Strategy nodes are required.");
         }
         if (strategyDocument.edges() == null) {
             throw new StrategyValidationException("Strategy edges are required.");
+        }
+        if (strategyDocument.nodes().size() > MAX_NODE_COUNT) {
+            throw new StrategyValidationException(
+                    "Strategies are limited to " + MAX_NODE_COUNT + " nodes per request.");
+        }
+        if (strategyDocument.edges().size() > MAX_EDGE_COUNT) {
+            throw new StrategyValidationException(
+                    "Strategies are limited to " + MAX_EDGE_COUNT + " edges per request.");
         }
 
         Set<String> nodeIds = new HashSet<>();
@@ -52,6 +66,9 @@ public class StrategyGraphValidator {
         if (edge.id() == null || edge.id().isBlank()) {
             throw new StrategyValidationException("Edge id is required.");
         }
+        validateTextLength(edge.id(), "Edge id", MAX_IDENTIFIER_LENGTH);
+        validateTextLength(edge.source(), "Edge source node id", MAX_IDENTIFIER_LENGTH);
+        validateTextLength(edge.target(), "Edge target node id", MAX_IDENTIFIER_LENGTH);
         GraphNode sourceNode = findNode(nodes, edge.source(), "source");
         GraphNode targetNode = findNode(nodes, edge.target(), "target");
 
@@ -68,14 +85,19 @@ public class StrategyGraphValidator {
         if (node.id() == null || node.id().isBlank()) {
             throw new StrategyValidationException("Node id is required.");
         }
+        validateTextLength(node.id(), "Node id", MAX_IDENTIFIER_LENGTH);
         if (!nodeIds.add(node.id())) {
             throw new StrategyValidationException("Duplicate node id: " + node.id());
         }
         if (node.type() == null || node.type().isBlank()) {
             throw new StrategyValidationException("Node type is required for node: " + node.id());
         }
+        validateTextLength(node.type(), "Node type", MAX_NODE_TYPE_LENGTH);
         if (node.position() == null) {
             throw new StrategyValidationException("Node position is required for node: " + node.id());
+        }
+        if (!Double.isFinite(node.position().x()) || !Double.isFinite(node.position().y())) {
+            throw new StrategyValidationException("Node position must be finite for node: " + node.id());
         }
 
         if (nodeCatalogService.findSpec(node.type()).isEmpty()) {
@@ -104,6 +126,7 @@ public class StrategyGraphValidator {
                 throw new StrategyValidationException(
                         "Unknown data field '" + entry.getKey() + "' for node: " + node.id());
             }
+            validateDataFieldValue(node.id(), entry.getKey(), entry.getValue());
         });
     }
 
@@ -143,6 +166,7 @@ public class StrategyGraphValidator {
         if (handle == null || handle.isBlank()) {
             return null;
         }
+        validateTextLength(handle, "Edge handle", 16);
 
         Matcher matcher = HANDLE_PATTERN.matcher(handle);
         if (!matcher.matches()) {
@@ -157,5 +181,27 @@ public class StrategyGraphValidator {
                 .findFirst()
                 .orElseThrow(() -> new StrategyValidationException(
                         "Invalid " + direction + " port index: " + portIndex));
+    }
+
+    private void validateDataFieldValue(String nodeId, String fieldName, JsonNode value) {
+        if (value == null || value.isNull() || value.isBoolean() || value.isNumber()) {
+            return;
+        }
+        if (value.isTextual()) {
+            validateTextLength(value.asText(), "Data field '" + fieldName + "' for node " + nodeId, MAX_DATA_STRING_LENGTH);
+            return;
+        }
+
+        throw new StrategyValidationException(
+                "Data field '" + fieldName + "' for node " + nodeId + " must be a scalar value.");
+    }
+
+    private void validateTextLength(@Nullable String value, String fieldLabel, int maxLength) {
+        if (value == null) {
+            return;
+        }
+        if (value.length() > maxLength) {
+            throw new StrategyValidationException(fieldLabel + " exceeds the " + maxLength + "-character limit.");
+        }
     }
 }

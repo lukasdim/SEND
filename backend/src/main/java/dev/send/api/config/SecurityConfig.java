@@ -1,6 +1,10 @@
 package dev.send.api.config;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,6 +17,8 @@ import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
+import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
@@ -43,16 +49,36 @@ public class SecurityConfig {
         if (authProperties.issuerUri() == null || authProperties.issuerUri().isBlank()) {
             throw new IllegalStateException("app.auth.supabase.issuer-uri must be configured.");
         }
-        if (authProperties.jwkSetUri() == null || authProperties.jwkSetUri().isBlank()) {
-            throw new IllegalStateException("app.auth.supabase.jwk-set-uri must be configured.");
-        }
 
-        NimbusJwtDecoder jwtDecoder = NimbusJwtDecoder.withJwkSetUri(authProperties.jwkSetUri()).build();
+        NimbusJwtDecoder jwtDecoder = buildJwtDecoder(authProperties);
         OAuth2TokenValidator<Jwt> validator = new DelegatingOAuth2TokenValidator<>(
                 JwtValidators.createDefaultWithIssuer(authProperties.issuerUri()),
                 new AudienceValidator(authProperties.audience()));
         jwtDecoder.setJwtValidator(validator);
         return jwtDecoder;
+    }
+
+    private NimbusJwtDecoder buildJwtDecoder(AuthProperties authProperties) {
+        if (authProperties.jwtSecret() != null && !authProperties.jwtSecret().isBlank()) {
+            SecretKey secretKey = new SecretKeySpec(
+                    authProperties.jwtSecret().getBytes(StandardCharsets.UTF_8),
+                    "HmacSHA256");
+            return NimbusJwtDecoder.withSecretKey(secretKey)
+                    .macAlgorithm(MacAlgorithm.HS256)
+                    .build();
+        }
+
+        if (authProperties.jwkSetUri() == null || authProperties.jwkSetUri().isBlank()) {
+            throw new IllegalStateException(
+                    "One of app.auth.supabase.jwt-secret or app.auth.supabase.jwk-set-uri must be configured.");
+        }
+
+        return NimbusJwtDecoder.withJwkSetUri(authProperties.jwkSetUri())
+                .jwsAlgorithms(algorithms -> {
+                    algorithms.add(SignatureAlgorithm.ES256);
+                    algorithms.add(SignatureAlgorithm.RS256);
+                })
+                .build();
     }
 
     private static final class AudienceValidator implements OAuth2TokenValidator<Jwt> {

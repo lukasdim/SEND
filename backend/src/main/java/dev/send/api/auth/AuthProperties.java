@@ -6,4 +6,5 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record AuthProperties(
         String issuerUri,
         String jwkSetUri,
+        String jwtSecret,
         String audience) {}

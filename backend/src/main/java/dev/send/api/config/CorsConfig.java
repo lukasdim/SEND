@@ -10,7 +10,7 @@ public class CorsConfig implements WebMvcConfigurer {
   private final String[] allowedOrigins;
 
   public CorsConfig(
-      @Value("${app.cors.allowed-origins:https://sendsys.io,https://www.sendsys.io,http://localhost:5173,http://10.0.0.44:5173}") String origins) {
+      @Value("${app.cors.allowed-origins:https://sendsys.io,https://www.sendsys.io,http://localhost:5173}") String origins) {
     this.allowedOrigins = java.util.Arrays.stream(origins.split(","))
         .map(String::trim)
         .filter(origin -> !origin.isBlank())

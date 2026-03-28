@@ -45,6 +45,7 @@ These modules are intended to be broad and intesive, however, time intensive to 
 - Supabase projects using legacy `HS256` signing should set `APP_AUTH_SUPABASE_JWT_SECRET` and may leave `APP_AUTH_SUPABASE_JWK_SET_URI` empty. Projects using asymmetric signing should keep `APP_AUTH_SUPABASE_JWK_SET_URI` set and leave `APP_AUTH_SUPABASE_JWT_SECRET` empty.
 - Only the frontend is published to the host, and it is bound to `127.0.0.1:5173` by default. The backend and database stay on an internal Docker network.
 - If you are fronting the stack with `cloudflared`, point the tunnel at `http://localhost:5173` on the host or at the `send-front` service inside the Docker network. Do not publish the backend or database directly.
+- The frontend proxy only trusts `CF-Connecting-IP` when the immediate peer is a local or private-network proxy. That is intended for the `cloudflared -> localhost/private Docker` path; if you later expose the frontend directly or change the proxy chain, revisit `frontend/nginx.conf`.
 - Plain `npm run dev` and local backend runs are unsupported-by-default unless you manually export the same variables outside Docker.
 
 # How we built it

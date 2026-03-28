@@ -8,8 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 @ConfigurationPropertiesScan
 public class SendApiApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(SendApiApplication.class, args);
-	}
-
+  public static void main(String[] args) {
+    SpringApplication.run(SendApiApplication.class, args);
+  }
 }

@@ -334,22 +334,26 @@ function SandboxInner({
 
   useEffect(() => {
     const abortController = new AbortController();
-    setIsNodeCatalogLoading(true);
-    setCatalogMessage(null);
 
-    void fetchNodeIoCatalog(abortController.signal)
-      .then((catalog) => {
+    const loadCatalog = async () => {
+      await Promise.resolve();
+      setIsNodeCatalogLoading(true);
+      setCatalogMessage(null);
+
+      try {
+        const catalog = await fetchNodeIoCatalog(abortController.signal);
         setNodeRegistry(createNodeRegistry(catalog));
-      })
-      .catch(() => {
+      } catch {
         setNodeRegistry(createNodeRegistry(FALLBACK_NODE_CATALOG));
         setCatalogMessage("Using the built-in node catalog for this lecture until the backend catalog is available.");
-      })
-      .finally(() => {
+      } finally {
         if (!abortController.signal.aborted) {
           setIsNodeCatalogLoading(false);
         }
-      });
+      }
+    };
+
+    void loadCatalog();
 
     return () => {
       abortController.abort();
@@ -404,12 +408,14 @@ function SandboxInner({
       return;
     }
 
-    setNodes(initialNodes);
-    setEdges(initialEdges);
-    setLocalMessage(null);
-    initializedGraphSignatureRef.current = starterGraphSignature;
-    window.requestAnimationFrame(() => {
-      void fitView({ padding: 0.2, duration: 280 });
+    void Promise.resolve().then(() => {
+      setNodes(initialNodes);
+      setEdges(initialEdges);
+      setLocalMessage(null);
+      initializedGraphSignatureRef.current = starterGraphSignature;
+      window.requestAnimationFrame(() => {
+        void fitView({ padding: 0.2, duration: 280 });
+      });
     });
   }, [fitView, initialEdges, initialNodes, isNodeCatalogLoading, starterGraphSignature]);
 

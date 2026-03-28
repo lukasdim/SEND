@@ -1,9 +1,8 @@
 package dev.send.api.marketdata.application;
 
+import dev.send.api.marketdata.domain.StockFundamentals;
 import java.util.Optional;
 
-import dev.send.api.marketdata.domain.StockFundamentals;
-
 public interface FundamentalsDataProvider {
-    Optional<StockFundamentals> fetchFundamentals(String symbol);
+  Optional<StockFundamentals> fetchFundamentals(String symbol);
 }

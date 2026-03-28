@@ -5,6 +5,7 @@ import type {
   LectureDetailResponse,
   LectureProgress,
 } from "../features/lectures/types";
+import { fetchWithAuth, readJsonOrThrowError } from "./http";
 
 const API_URL = import.meta.env.VITE_API_URL?.trim() || "";
 
@@ -39,30 +40,14 @@ function toLectureProgress(payload: LectureProgressPayload): LectureProgress {
   };
 }
 
-async function readJson<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    let message = `Lecture request failed (${response.status})`;
-    try {
-      const errorPayload = (await response.json()) as { message?: unknown };
-      if (typeof errorPayload.message === "string" && errorPayload.message.length > 0) {
-        message = errorPayload.message;
-      }
-    } catch {
-      // Ignore malformed error bodies and fall back to the status-based message.
-    }
-    throw new Error(message);
-  }
-
-  return (await response.json()) as T;
-}
-
 export async function fetchLectureCatalog(): Promise<LectureCatalogResponse> {
-  const response = await fetch(`${API_URL}/api/lectures`, {
+  const response = await fetchWithAuth(`${API_URL}/api/lectures`, {
     method: "GET",
+    authMode: "optional",
     credentials: "include",
   });
 
-  return readJson<LectureCatalogResponse>(response);
+  return readJsonOrThrowError<LectureCatalogResponse>(response, `Lecture request failed (${response.status})`);
 }
 
 export async function fetchLecture(lectureId: string): Promise<LectureDetailResponse> {
@@ -78,12 +63,16 @@ export async function fetchLectureBySlug(
   categorySlug: string,
   lectureSlug: string
 ): Promise<LectureDetailResponse> {
-  const response = await fetch(`${API_URL}/api/lectures/${encodeURIComponent(categorySlug)}/${encodeURIComponent(lectureSlug)}`, {
+  const response = await fetchWithAuth(`${API_URL}/api/lectures/${encodeURIComponent(categorySlug)}/${encodeURIComponent(lectureSlug)}`, {
     method: "GET",
+    authMode: "optional",
     credentials: "include",
   });
 
-  const payload = await readJson<LectureDetailResponse & { progress: LectureProgressPayload }>(response);
+  const payload = await readJsonOrThrowError<LectureDetailResponse & { progress: LectureProgressPayload }>(
+    response,
+    `Lecture request failed (${response.status})`
+  );
   return {
     ...payload,
     progress: toLectureProgress(payload.progress),
@@ -91,23 +80,29 @@ export async function fetchLectureBySlug(
 }
 
 export async function fetchLectureProgress(lectureId: string): Promise<LectureProgress> {
-  const response = await fetch(`${API_URL}/api/lectures/${encodeURIComponent(lectureId)}/progress`, {
+  const response = await fetchWithAuth(`${API_URL}/api/lectures/${encodeURIComponent(lectureId)}/progress`, {
     method: "GET",
+    authMode: "optional",
     credentials: "include",
   });
 
-  return toLectureProgress(await readJson<LectureProgressPayload>(response));
+  return toLectureProgress(
+    await readJsonOrThrowError<LectureProgressPayload>(response, `Lecture request failed (${response.status})`)
+  );
 }
 
 export async function saveLectureProgress(progress: LectureProgress): Promise<LectureProgress> {
-  const response = await fetch(`${API_URL}/api/lectures/${encodeURIComponent(progress.lectureId)}/progress`, {
+  const response = await fetchWithAuth(`${API_URL}/api/lectures/${encodeURIComponent(progress.lectureId)}/progress`, {
     method: "POST",
+    authMode: "optional",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify(progress),
   });
 
-  return toLectureProgress(await readJson<LectureProgressPayload>(response));
+  return toLectureProgress(
+    await readJsonOrThrowError<LectureProgressPayload>(response, `Lecture request failed (${response.status})`)
+  );
 }
 
 export async function verifyLectureCheckpoint(
@@ -115,15 +110,19 @@ export async function verifyLectureCheckpoint(
   checkpointId: string,
   submission: LectureCheckpointSubmission
 ): Promise<LectureCheckpointVerificationResult> {
-  const response = await fetch(
+  const response = await fetchWithAuth(
     `${API_URL}/api/lectures/${encodeURIComponent(lectureId)}/checkpoints/${encodeURIComponent(checkpointId)}/verify`,
     {
       method: "POST",
+      authMode: "optional",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify(submission),
     }
   );
 
-  return readJson<LectureCheckpointVerificationResult>(response);
+  return readJsonOrThrowError<LectureCheckpointVerificationResult>(
+    response,
+    `Lecture request failed (${response.status})`
+  );
 }

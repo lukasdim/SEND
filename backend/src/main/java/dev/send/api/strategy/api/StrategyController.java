@@ -2,6 +2,7 @@ package dev.send.api.strategy.api;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 import javax.annotation.Nullable;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,17 +13,23 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import dev.send.api.auth.CurrentUser;
+import dev.send.api.auth.CurrentUserAccessor;
 import dev.send.api.catalog.api.dto.NodeIoCatalogDto;
 import dev.send.api.catalog.application.NodeCatalogService;
+import dev.send.api.strategy.api.dto.StoredStrategyDto;
 import dev.send.api.strategy.api.dto.StrategyDocumentDto;
 import dev.send.api.strategy.api.dto.StrategySimulationBoundsDto;
 import dev.send.api.strategy.api.dto.StrategySimulationRequestDto;
 import dev.send.api.strategy.api.dto.StrategySimulationResultDto;
+import dev.send.api.strategy.api.dto.StrategySummaryDto;
+import dev.send.api.strategy.api.dto.StrategyUpsertRequestDto;
 import dev.send.api.strategy.application.StrategyDocumentMapper;
 import dev.send.api.strategy.application.SimulationRateLimitException;
 import dev.send.api.strategy.application.StrategySimulationRateLimiter;
@@ -45,6 +52,7 @@ public class StrategyController {
     private final StrategyExecutionService strategyExecutionService;
     private final StrategySimulationBoundsService strategySimulationBoundsService;
     private final StrategySimulationRateLimiter strategySimulationRateLimiter;
+    private final CurrentUserAccessor currentUserAccessor;
     private final ObjectMapper objectMapper;
 
     public StrategyController(
@@ -54,6 +62,7 @@ public class StrategyController {
             StrategyExecutionService strategyExecutionService,
             StrategySimulationBoundsService strategySimulationBoundsService,
             StrategySimulationRateLimiter strategySimulationRateLimiter,
+            CurrentUserAccessor currentUserAccessor,
             ObjectMapper objectMapper) {
         this.strategyService = strategyService;
         this.strategyDocumentMapper = strategyDocumentMapper;
@@ -61,20 +70,37 @@ public class StrategyController {
         this.strategyExecutionService = strategyExecutionService;
         this.strategySimulationBoundsService = strategySimulationBoundsService;
         this.strategySimulationRateLimiter = strategySimulationRateLimiter;
+        this.currentUserAccessor = currentUserAccessor;
         this.objectMapper = objectMapper;
     }
 
     @GetMapping
-    public Collection<StrategyDocumentDto> getAll() {
-        return strategyService.findAll().stream()
-                .map(strategyDocumentMapper::toDto)
+    public Collection<StrategySummaryDto> getAll() {
+        return strategyService.findAll(currentUserAccessor.findCurrentUser()).stream()
+                .map(strategyDocumentMapper::toSummaryDto)
                 .toList();
     }
 
     @PostMapping
-    public StrategyDocumentDto create(@RequestBody StrategyDocumentDto strategyDocumentDto) {
-        return strategyDocumentMapper.toDto(
-                strategyService.save(strategyDocumentMapper.toDomain(strategyDocumentDto)));
+    public StoredStrategyDto create(@RequestBody StrategyUpsertRequestDto strategyUpsertRequestDto) {
+        CurrentUser currentUser = currentUserAccessor.requireCurrentUser();
+        return strategyDocumentMapper.toStoredDto(
+                strategyService.create(
+                        currentUser,
+                        strategyDocumentMapper.toCommand(null, strategyUpsertRequestDto)));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<StoredStrategyDto> update(
+            @PathVariable String id,
+            @RequestBody StrategyUpsertRequestDto strategyUpsertRequestDto) {
+        CurrentUser currentUser = currentUserAccessor.requireCurrentUser();
+        return strategyService.update(
+                        currentUser,
+                        strategyDocumentMapper.toCommand(id, strategyUpsertRequestDto))
+                .map(strategyDocumentMapper::toStoredDto)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
     }
 
     @PostMapping("/test")
@@ -106,11 +132,12 @@ public class StrategyController {
     }
 
     @GetMapping("/{id}")
-    @Nullable
-    public StrategyDocumentDto getStrategy(@PathVariable String id) {
-        return strategyService.findById(id)
-                .map(strategyDocumentMapper::toDto)
-                .orElse(null);
+    public ResponseEntity<StoredStrategyDto> getStrategy(@PathVariable String id) {
+        Optional<CurrentUser> currentUser = currentUserAccessor.findCurrentUser();
+        return strategyService.findById(id, currentUser)
+                .map(strategyDocumentMapper::toStoredDto)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @GetMapping("/node-io")

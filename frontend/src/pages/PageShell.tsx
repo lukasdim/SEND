@@ -1,4 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
+import AuthPanel from "../components/auth/AuthPanel";
 import {
   UI_ACCENT,
   UI_APP_SHELL,
@@ -91,6 +92,8 @@ export default function PageShell({ title, eyebrow, description, children }: Pag
               );
             })}
           </nav>
+
+          <AuthPanel compact />
         </header>
 
         <section style={{ marginBottom: 36 }}>

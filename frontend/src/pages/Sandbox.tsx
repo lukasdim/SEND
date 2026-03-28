@@ -16,6 +16,7 @@ import ReactFlow, {
   useReactFlow,
 } from "reactflow";
 import "reactflow/dist/style.css";
+import AuthPanel from "../components/auth/AuthPanel";
 import {
   createEmptyNodeRegistry,
   createNodeRegistry,
@@ -46,25 +47,24 @@ import {
   SANDBOX_LIBRARY_NODE_WIDTH,
   SANDBOX_NODE_WIDTH,
   SANDBOX_NOTIFICATION_TIMEOUT_MS,
-  SANDBOX_STRATEGIES_API,
 } from "../config/sandboxConfig";
 import {
+  createStoredStrategy,
+  fetchStoredStrategy,
+  fetchStrategySummaries,
   fetchSimulationBounds,
   fetchNodeIoCatalog,
   simulateStrategy,
   type ApiError,
+  type StoredStrategy,
+  type StrategySummary,
   type StrategySimulationConfig,
   type StrategySimulationBounds,
   type StrategySimulationResult,
   type StrategySimulationTraceDay,
   type StrategySimulationTradeEvent,
+  updateStoredStrategy,
 } from "../services/api";
-
-type StrategySummary = {
-  id: string;
-  name: string;
-  lastEdited: string;
-};
 
 type GraphNodePayload = {
   id: string;
@@ -87,12 +87,6 @@ type GraphEdgePayload = {
 type GraphPayload = {
   nodes: GraphNodePayload[];
   edges: GraphEdgePayload[];
-};
-
-type BackendGraphDto = {
-  id: string;
-  nodes: unknown[];
-  edges: unknown[];
 };
 
 type FrontendGraphPayload = {
@@ -2097,6 +2091,7 @@ function SandboxInner() {
   const [strategiesError, setStrategiesError] = useState("");
   const [currentStrategyId, setCurrentStrategyId] = useState<string | null>(null);
   const [currentStrategyName, setCurrentStrategyName] = useState<string | null>(null);
+  const [currentStrategyKind, setCurrentStrategyKind] = useState<StrategySummary["kind"] | null>(null);
   const [isStrategyLoading, setIsStrategyLoading] = useState(false);
   const [isStrategySaving, setIsStrategySaving] = useState(false);
   const [isStrategyTesting, setIsStrategyTesting] = useState(false);
@@ -2487,25 +2482,7 @@ function SandboxInner() {
       setStrategiesError("");
 
       try {
-        const response = await fetch(SANDBOX_STRATEGIES_API.listStrategiesUrl, {
-          method: "GET",
-          signal,
-        });
-        if (!response.ok) {
-          throw new Error(`Failed to fetch strategies (${response.status})`);
-        }
-
-        const payload = (await response.json()) as unknown;
-        const nextStrategies = Array.isArray(payload)
-          ? payload.flatMap((strategy) => {
-              if (!isRecord(strategy)) return [];
-              const { id } = strategy;
-              if (typeof id !== "string" || id.length === 0) return [];
-              return [{ id, name: id, lastEdited: "-" }];
-            })
-          : [];
-
-        setStrategies(nextStrategies);
+        setStrategies(await fetchStrategySummaries(signal));
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setStrategies([]);
@@ -2539,22 +2516,7 @@ function SandboxInner() {
       setStrategiesError("");
 
       try {
-        const response = await fetch(
-          SANDBOX_STRATEGIES_API.strategyByIdUrl(strategy.id),
-          { method: "GET" }
-        );
-        if (!response.ok) {
-          throw new Error(`Failed to fetch strategy (${response.status})`);
-        }
-
-        const payload = (await response.json()) as {
-          id?: unknown;
-          nodes?: unknown;
-          edges?: unknown;
-        };
-        if (!Array.isArray(payload.nodes) || !Array.isArray(payload.edges)) {
-          throw new Error("Strategy data is malformed.");
-        }
+        const payload = await fetchStoredStrategy(strategy.id);
 
         const loadedNodes: Node[] = payload.nodes.flatMap((rawNode) => {
           if (!isRecord(rawNode)) return [];
@@ -2621,8 +2583,9 @@ function SandboxInner() {
         setSandboxMode("edit");
         setSelectedReplayDayIndex(0);
         setHoveredReplayDayIndex(null);
-        setCurrentStrategyId(typeof payload.id === "string" ? payload.id : strategy.id);
-        setCurrentStrategyName(strategy.name);
+        setCurrentStrategyId(payload.id);
+        setCurrentStrategyName(payload.name);
+        setCurrentStrategyKind(payload.kind);
         setPaletteDrag(null);
         dismissTransientBanner();
         window.requestAnimationFrame(() => {
@@ -2781,6 +2744,7 @@ function SandboxInner() {
   const onCreateStrategy = useCallback(() => {
     setCurrentStrategyId(null);
     setCurrentStrategyName(SANDBOX_DEFAULT_UNTITLED_STRATEGY_NAME);
+    setCurrentStrategyKind(null);
     setPaletteDrag(null);
     setActiveIssues([]);
     setFocusedIssueIndex(0);
@@ -2804,38 +2768,44 @@ function SandboxInner() {
     setIsStrategySaving(true);
     try {
       const strategyName = currentStrategyName ?? SANDBOX_DEFAULT_UNTITLED_STRATEGY_NAME;
-      const strategyId = currentStrategyId ?? `s-${crypto.randomUUID()}`;
       const materializedGraph = materializeInlineMathInputs(nodes, edges);
       const payloadGraph = buildBackendGraphPayload(materializedGraph);
+      const savedStrategy: StoredStrategy =
+        currentStrategyId && currentStrategyKind === "user"
+          ? await updateStoredStrategy(currentStrategyId, {
+              name: strategyName,
+              nodes: payloadGraph.nodes,
+              edges: payloadGraph.edges,
+            })
+          : await createStoredStrategy({
+              name: strategyName,
+              nodes: payloadGraph.nodes,
+              edges: payloadGraph.edges,
+            });
 
-      const payload: BackendGraphDto = {
-        id: strategyId,
-        nodes: payloadGraph.nodes as unknown[],
-        edges: payloadGraph.edges as unknown[],
-      };
-
-      const response = await fetch(SANDBOX_STRATEGIES_API.listStrategiesUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to save strategy (${response.status})`);
-      }
-
-      setCurrentStrategyId(strategyId);
-      setCurrentStrategyName(strategyName);
-    } catch {
+      setCurrentStrategyId(savedStrategy.id);
+      setCurrentStrategyName(savedStrategy.name);
+      setCurrentStrategyKind(savedStrategy.kind);
+      await fetchStrategies();
+    } catch (error) {
       notifyTransientBanner(
         "Could not save strategy",
-        "The strategy could not be saved right now.",
-        ["Try again after the backend is available."]
+        formatFallbackErrorMessage(error, "The strategy could not be saved right now."),
+        ["Sign in to save account-backed strategies, then try again."]
       );
     } finally {
       setIsStrategySaving(false);
     }
-  }, [currentStrategyId, currentStrategyName, edges, nodes, nodes.length, notifyTransientBanner]);
+  }, [
+    currentStrategyId,
+    currentStrategyKind,
+    currentStrategyName,
+    edges,
+    fetchStrategies,
+    nodes,
+    nodes.length,
+    notifyTransientBanner,
+  ]);
 
   const onTestStrategy = useCallback(async () => {
     if (nodes.length === 0) {
@@ -3323,11 +3293,18 @@ function SandboxInner() {
         }}
       >
         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
+          <AuthPanel compact />
+
           <div style={sidebarCardStyle}>
             <div style={sidebarSectionTitleStyle}>{isReplayMode ? "Replay" : "Strategy"}</div>
             <div style={{ fontSize: 14, fontWeight: 700, color: UI_TEXT_PRIMARY }}>
               {currentStrategyName ?? "No strategy loaded"}
             </div>
+            {currentStrategyKind && (
+              <div style={{ marginTop: 4, fontSize: 11, color: UI_TEXT_SECONDARY, textTransform: "capitalize" }}>
+                {currentStrategyKind === "template" ? "Built-in template" : "Saved to your account"}
+              </div>
+            )}
             {currentStrategyId && (
               <div style={{ marginTop: 4, fontSize: 11, color: UI_TEXT_SECONDARY }}>ID: {currentStrategyId}</div>
             )}
@@ -3488,7 +3465,9 @@ function SandboxInner() {
                         >
                           <div style={{ fontWeight: 600, fontSize: 13, color: UI_TEXT_PRIMARY }}>{strategy.name}</div>
                           <div style={{ marginTop: 4, fontSize: 11, color: UI_TEXT_SECONDARY }}>
-                            Last edited: {formatLastEdited(strategy.lastEdited)}
+                            {strategy.kind === "template"
+                              ? "Built-in template"
+                              : `Last edited: ${formatLastEdited(strategy.updatedAt)}`}
                           </div>
                         </button>
                       ))}

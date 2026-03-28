@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
+import AuthPanel from "../components/auth/AuthPanel";
 import LectureMiniSandbox from "../components/lectures/LectureMiniSandbox";
 import MarkdownContent, { slugifyMarkdownHeading } from "../components/lectures/MarkdownContent";
 import type { LectureDetailResponse, LectureProgress } from "../features/lectures/types";
@@ -222,6 +223,10 @@ export default function LecturePage() {
             <span aria-hidden="true">←</span>
             <span>Back</span>
           </Link>
+
+          <div style={{ minWidth: 220 }}>
+            <AuthPanel compact />
+          </div>
 
           <div className="lecture-progress-shell">
             <div className="lecture-progress-shell__eyebrow">{lectureDetail.category.title}</div>

@@ -40,15 +40,27 @@ async function getAccessToken(authMode: AuthMode): Promise<string | null> {
 export async function fetchWithAuth(input: string, options: FetchWithAuthOptions = {}) {
   const { authMode = "public", headers, ...rest } = options;
   const token = await getAccessToken(authMode);
-  const nextHeaders = new Headers(headers);
-  if (token) {
-    nextHeaders.set("Authorization", `Bearer ${token}`);
+
+  const makeRequest = (bearerToken: string | null) => {
+    const nextHeaders = new Headers(headers);
+    if (bearerToken) {
+      nextHeaders.set("Authorization", `Bearer ${bearerToken}`);
+    } else {
+      nextHeaders.delete("Authorization");
+    }
+
+    return fetch(input, {
+      ...rest,
+      headers: nextHeaders,
+    });
+  };
+
+  const response = await makeRequest(token);
+  if (authMode === "optional" && token && (response.status === 401 || response.status === 403)) {
+    return makeRequest(null);
   }
 
-  return fetch(input, {
-    ...rest,
-    headers: nextHeaders,
-  });
+  return response;
 }
 
 export async function readJson<T>(response: Response): Promise<T> {

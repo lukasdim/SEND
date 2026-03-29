@@ -85,13 +85,6 @@ public class StrategyController {
                 .toList();
     }
 
-    @GetMapping
-    public Collection<StrategySummaryDto> getAll() {
-        return strategyService.findAll(currentUserAccessor.findCurrentUser()).stream()
-                .map(strategyDocumentMapper::toSummaryDto)
-                .toList();
-    }
-
     @PostMapping
     public StoredStrategyDto create(@RequestBody StrategyUpsertRequestDto strategyUpsertRequestDto) {
         CurrentUser currentUser = currentUserAccessor.requireCurrentUser();

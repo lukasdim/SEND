@@ -203,7 +203,6 @@ export default function LecturePage() {
 
       setLectureDetail(refreshedLectureDetail);
       setProgress(refreshedLectureDetail.progress);
-
       if (result.passed && result.newlyUnlockedSublectureIndex > previousHighestUnlockedIndex) {
         setRecentlyUnlockedIndex(result.newlyUnlockedSublectureIndex);
       }

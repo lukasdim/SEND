@@ -18,6 +18,10 @@ type ApiErrorPayload = {
 };
 
 async function getAccessToken(authMode: AuthMode): Promise<string | null> {
+  if (authMode === "public") {
+    return null;
+  }
+
   if (!supabase) {
     if (authMode === "required") {
       throw new Error("Sign in to continue.");

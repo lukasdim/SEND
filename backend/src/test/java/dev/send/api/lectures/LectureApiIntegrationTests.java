@@ -3,7 +3,9 @@ package dev.send.api.lectures;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -112,6 +114,23 @@ class LectureApiIntegrationTests {
                                 .andExpect(status().isOk())
                                 .andExpect(jsonPath("$.sublectures[1].contentSource").exists())
                                 .andExpect(jsonPath("$.progress.highestUnlockedSublectureIndex").value(1));
+        }
+
+        @Test
+        void allowsLectureCheckpointVerificationFromLoopbackFrontendOrigin() throws Exception {
+                mockMvc.perform(options("/api/lectures/logic--foundations--market-graph-basics/checkpoints/checkpoint-place-buy/verify")
+                                .header("Origin", "http://127.0.0.1:5173")
+                                .header("Access-Control-Request-Method", "POST"))
+                                .andExpect(status().isOk())
+                                .andExpect(header().string("Access-Control-Allow-Origin", "http://127.0.0.1:5173"));
+
+                mockMvc.perform(post("/api/lectures/logic--foundations--market-graph-basics/checkpoints/checkpoint-place-buy/verify")
+                                .header("Origin", "http://127.0.0.1:5173")
+                                .contentType(APPLICATION_JSON)
+                                .content(verifyPayload()))
+                                .andExpect(status().isOk())
+                                .andExpect(header().string("Access-Control-Allow-Origin", "http://127.0.0.1:5173"))
+                                .andExpect(jsonPath("$.passed").value(true));
         }
 
         @Test

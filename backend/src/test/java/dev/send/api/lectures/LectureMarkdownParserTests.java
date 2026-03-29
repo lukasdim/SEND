@@ -23,8 +23,10 @@ class LectureMarkdownParserTests {
             LectureMarkdownParser parser = new LectureMarkdownParser(new ObjectMapper());
             LectureDefinition lecture = parser.parse(markdown);
 
-            assertEquals("foundations--market-graph-basics", lecture.id());
+            assertEquals("logic--foundations--market-graph-basics", lecture.id());
             assertEquals("market-graph-basics", lecture.slug());
+            assertEquals("Logic", lecture.path().title());
+            assertEquals("logic", lecture.path().slug());
             assertEquals("Foundations", lecture.category().title());
             assertEquals(3, lecture.sublectures().size());
             assertEquals("Getting Started", lecture.sublectures().get(0).title());

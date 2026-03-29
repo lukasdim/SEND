@@ -10,7 +10,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/library" element={<Library />} />
-        <Route path="/library/:categorySlug/:lectureSlug" element={<LecturePage />} />
+        <Route path="/library/:pathSlug/:categorySlug/:lectureSlug" element={<LecturePage />} />
         <Route path="/sandbox" element={<Sandbox />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

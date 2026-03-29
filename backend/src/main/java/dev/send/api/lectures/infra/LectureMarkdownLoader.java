@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 
 import org.springframework.core.io.Resource;
@@ -29,6 +30,7 @@ public class LectureMarkdownLoader {
         try {
             Resource[] resources = resourcePatternResolver.getResources("classpath*:lectures/**/*.md");
             return Arrays.stream(resources)
+                    .sorted(Comparator.comparing(resource -> resource.getFilename() == null ? "" : resource.getFilename()))
                     .map(this::loadLecture)
                     .toList();
         } catch (IOException exception) {

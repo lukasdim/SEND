@@ -64,12 +64,13 @@ public class LectureController {
         return lectureDtoMapper.toCatalogResponse(lectureService.findAll());
     }
 
-    @GetMapping("/{categorySlug}/{lectureSlug}")
+    @GetMapping("/{pathSlug}/{categorySlug}/{lectureSlug}")
     public LectureDetailResponseDto getLecture(
+            @PathVariable String pathSlug,
             @PathVariable String categorySlug,
             @PathVariable String lectureSlug,
             HttpServletRequest request) {
-        LectureDefinition lecture = lectureService.getBySlug(categorySlug, lectureSlug);
+        LectureDefinition lecture = lectureService.getBySlug(pathSlug, categorySlug, lectureSlug);
         return lectureDtoMapper.toDetailDto(
                 lecture,
                 lectureProgressService.getProgress(lecture, request));

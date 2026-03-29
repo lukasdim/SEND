@@ -150,8 +150,8 @@ public class StrategyGraphValidator {
             return handlePort;
         }
 
-        List<JsonNode> ports =
-                source ? nodeCatalogService.outputPorts(nodeType) : nodeCatalogService.inputPorts(nodeType);
+        List<JsonNode> ports = source ? nodeCatalogService.outputPorts(nodeType)
+                : nodeCatalogService.inputPorts(nodeType);
         if (ports.size() == 1) {
             return ports.get(0).path("index").asInt(-1);
         }
@@ -184,9 +184,8 @@ public class StrategyGraphValidator {
                 .filter(port -> port.path("index").asInt(Integer.MIN_VALUE) == portIndex)
                 .findFirst()
                 .orElseThrow(
-                        () ->
-                                new StrategyValidationException(
-                                        "Invalid " + direction + " port index: " + portIndex));
+                        () -> new StrategyValidationException(
+                                "Invalid " + direction + " port index: " + portIndex));
     }
 
     private void validateDataFieldValue(String nodeId, String fieldName, JsonNode value) {

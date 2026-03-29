@@ -4,8 +4,9 @@ import readingTheMap from "./03-reading-the-map.md?raw";
 import type { LectureDefinition } from "../../../../features/lectures/types";
 
 const lecture: LectureDefinition = {
-  id: "foundations/market-graph-basics",
+  id: "logic--foundations--market-graph-basics",
   slug: "market-graph-basics",
+  pathSlug: "logic",
   categorySlug: "foundations",
   title: "Building Your First Decision Graph",
   summary: "Learn how SEND lectures unlock in stages while you build a tiny graph between each sublecture.",

@@ -27,9 +27,11 @@ public class LectureService {
                 .orElseThrow(() -> new LectureNotFoundException("Lecture not found."));
     }
 
-    public LectureDefinition getBySlug(String categorySlug, String lectureSlug) {
+    public LectureDefinition getBySlug(String pathSlug, String categorySlug, String lectureSlug) {
         return lectures.stream()
-                .filter(lecture -> lecture.category().slug().equals(categorySlug) && lecture.slug().equals(lectureSlug))
+                .filter(lecture -> lecture.path().slug().equals(pathSlug)
+                        && lecture.category().slug().equals(categorySlug)
+                        && lecture.slug().equals(lectureSlug))
                 .findFirst()
                 .orElseThrow(() -> new LectureNotFoundException("Lecture not found."));
     }

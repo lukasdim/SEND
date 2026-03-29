@@ -51,23 +51,28 @@ export async function fetchLectureCatalog(): Promise<LectureCatalogResponse> {
 }
 
 export async function fetchLecture(lectureId: string): Promise<LectureDetailResponse> {
-  const [categorySlug, lectureSlug] = lectureId.split("--", 2);
-  if (!categorySlug || !lectureSlug) {
+  const [pathSlug, categorySlug, ...lectureSlugParts] = lectureId.split("--");
+  const lectureSlug = lectureSlugParts.join("--");
+  if (!pathSlug || !categorySlug || !lectureSlug) {
     throw new Error("Lecture id is malformed.");
   }
 
-  return fetchLectureBySlug(categorySlug, lectureSlug);
+  return fetchLectureBySlug(pathSlug, categorySlug, lectureSlug);
 }
 
 export async function fetchLectureBySlug(
+  pathSlug: string,
   categorySlug: string,
   lectureSlug: string
 ): Promise<LectureDetailResponse> {
-  const response = await fetchWithAuth(`${API_URL}/api/lectures/${encodeURIComponent(categorySlug)}/${encodeURIComponent(lectureSlug)}`, {
-    method: "GET",
-    authMode: "optional",
-    credentials: "include",
-  });
+  const response = await fetchWithAuth(
+    `${API_URL}/api/lectures/${encodeURIComponent(pathSlug)}/${encodeURIComponent(categorySlug)}/${encodeURIComponent(lectureSlug)}`,
+    {
+      method: "GET",
+      authMode: "optional",
+      credentials: "include",
+    }
+  );
 
   const payload = await readJsonOrThrowError<LectureDetailResponse & { progress: LectureProgressPayload }>(
     response,

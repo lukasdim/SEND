@@ -22,7 +22,7 @@ function getSublectureSectionId(index: number, title: string): string {
 }
 
 export default function LecturePage() {
-  const { categorySlug = "", lectureSlug = "" } = useParams();
+  const { pathSlug = "", categorySlug = "", lectureSlug = "" } = useParams();
   const [lectureDetail, setLectureDetail] = useState<LectureDetailResponse | null>(null);
   const [progress, setProgress] = useState<LectureProgress | null>(null);
   const [isLectureLoading, setIsLectureLoading] = useState(true);
@@ -32,7 +32,7 @@ export default function LecturePage() {
   const [recentlyUnlockedIndex, setRecentlyUnlockedIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!categorySlug || !lectureSlug) {
+    if (!pathSlug || !categorySlug || !lectureSlug) {
       return;
     }
 
@@ -43,7 +43,7 @@ export default function LecturePage() {
     setProgress(null);
     setRecentlyUnlockedIndex(null);
 
-    void fetchLectureBySlug(categorySlug, lectureSlug)
+    void fetchLectureBySlug(pathSlug, categorySlug, lectureSlug)
       .then((detail) => {
         if (!isActive) {
           return;
@@ -69,7 +69,7 @@ export default function LecturePage() {
     return () => {
       isActive = false;
     };
-  }, [categorySlug, lectureSlug]);
+  }, [pathSlug, categorySlug, lectureSlug]);
 
   useEffect(() => {
     const anchorElements = Array.from(document.querySelectorAll<HTMLElement>("[data-lecture-anchor='true']"));
@@ -119,7 +119,7 @@ export default function LecturePage() {
     };
   }, [lectureDetail, progress?.highestUnlockedSublectureIndex]);
 
-  if (!categorySlug || !lectureSlug) {
+  if (!pathSlug || !categorySlug || !lectureSlug) {
     return <Navigate to="/library" replace />;
   }
 
@@ -145,16 +145,14 @@ export default function LecturePage() {
   const totalMilestones =
     lectureDetail.sublectures.length + lectureDetail.sublectures.filter((item) => item.checkpointAfter).length;
   const completedMilestones =
-    Math.min(highestUnlockedIndex + 1, lectureDetail.sublectures.length) +
-    progress.completedCheckpointIds.length;
+    Math.min(highestUnlockedIndex + 1, lectureDetail.sublectures.length) + progress.completedCheckpointIds.length;
   const progressPercent = Math.round((completedMilestones / totalMilestones) * 100);
 
   const tocItems: TocItem[] = lectureDetail.sublectures.flatMap((sublecture, index) => {
     const sectionId = getSublectureSectionId(index, sublecture.title);
     const locked = index > highestUnlockedIndex;
     const completed =
-      index < highestUnlockedIndex ||
-      progress.completedCheckpointIds.includes(sublecture.checkpointAfter?.id ?? "");
+      index < highestUnlockedIndex || progress.completedCheckpointIds.includes(sublecture.checkpointAfter?.id ?? "");
     const mainItem: TocItem = {
       id: sectionId,
       title: sublecture.title,
@@ -201,7 +199,7 @@ export default function LecturePage() {
     try {
       const previousHighestUnlockedIndex = progress.highestUnlockedSublectureIndex;
       const result = await verifyLectureCheckpoint(lectureDetail.id, checkpointId, submission);
-      const refreshedLectureDetail = await fetchLectureBySlug(categorySlug, lectureSlug);
+      const refreshedLectureDetail = await fetchLectureBySlug(pathSlug, categorySlug, lectureSlug);
 
       setLectureDetail(refreshedLectureDetail);
       setProgress(refreshedLectureDetail.progress);
@@ -220,8 +218,8 @@ export default function LecturePage() {
     <div className="lecture-page">
       <div className="lecture-page__container">
         <div className="lecture-topbar">
-          <Link to="/library" className="lecture-back-button">
-            <span aria-hidden="true">←</span>
+          <Link to={`/library?path=${lectureDetail.pathSlug}`} className="lecture-back-button">
+            <span aria-hidden="true">&lt;-</span>
             <span>Back</span>
           </Link>
 
@@ -230,12 +228,15 @@ export default function LecturePage() {
           </div>
 
           <div className="lecture-progress-shell">
-            <div className="lecture-progress-shell__eyebrow">{lectureDetail.category.title}</div>
+            <div className="lecture-progress-shell__eyebrow">
+              {lectureDetail.path.title} / {lectureDetail.category.title}
+            </div>
             <div className="lecture-progress-shell__header">
               <div>
                 <h1 className="lecture-progress-shell__title">{lectureDetail.title}</h1>
                 <div className="lecture-progress-shell__meta">
-                  {lectureDetail.estimatedMinutes} min lecture • {completedMilestones}/{totalMilestones} milestones completed
+                  {lectureDetail.estimatedMinutes} min lecture | {completedMilestones}/{totalMilestones} milestones
+                  completed
                 </div>
               </div>
               <div className="lecture-badge">{progressPercent}% unlocked</div>
@@ -262,8 +263,8 @@ export default function LecturePage() {
           >
             {tocItems.map((item) => (
               <option key={item.id} value={item.id} disabled={item.locked}>
-                {item.locked ? "Locked • " : ""}
-                {item.kind === "heading" ? "↳ " : ""}
+                {item.locked ? "Locked | " : ""}
+                {item.kind === "heading" ? "> " : ""}
                 {item.title}
               </option>
             ))}
@@ -286,7 +287,7 @@ export default function LecturePage() {
                 >
                   <span className="lecture-sidebar-index">
                     {item.kind === "heading"
-                      ? "·"
+                      ? "."
                       : index + 1 - tocItems.slice(0, index).filter((entry) => entry.kind === "heading").length}
                   </span>
                   <span className="lecture-sidebar-label">{item.title}</span>
@@ -302,7 +303,9 @@ export default function LecturePage() {
             <section className="lecture-content-card lecture-content-card--summary">
               <div className="lecture-content-meta">
                 <span>{lectureDetail.category.hero ?? lectureDetail.category.description}</span>
-                <span>{unlockedSublectures.length} of {lectureDetail.sublectures.length} sublectures visible</span>
+                <span>
+                  {unlockedSublectures.length} of {lectureDetail.sublectures.length} sublectures visible
+                </span>
               </div>
 
               {lectureError && <div className="lecture-inline-warning">{lectureError}</div>}
@@ -312,12 +315,8 @@ export default function LecturePage() {
               {unlockedSublectures.map((sublecture, index) => {
                 const sectionId = getSublectureSectionId(index, sublecture.title);
                 const checkpoint = sublecture.checkpointAfter;
-                const checkpointCompleted = checkpoint
-                  ? progress.completedCheckpointIds.includes(checkpoint.id)
-                  : false;
-                const checkpointFeedback = checkpoint
-                  ? progress.activeCheckpointState[checkpoint.id]?.lastFeedback
-                  : undefined;
+                const checkpointCompleted = checkpoint ? progress.completedCheckpointIds.includes(checkpoint.id) : false;
+                const checkpointFeedback = checkpoint ? progress.activeCheckpointState[checkpoint.id]?.lastFeedback : undefined;
                 const shouldAnimateUnlock = recentlyUnlockedIndex === index;
 
                 return (

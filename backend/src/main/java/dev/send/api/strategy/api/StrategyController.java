@@ -85,6 +85,13 @@ public class StrategyController {
                 .toList();
     }
 
+    @GetMapping
+    public Collection<StrategySummaryDto> getAll() {
+        return strategyService.findAll(currentUserAccessor.findCurrentUser()).stream()
+                .map(strategyDocumentMapper::toSummaryDto)
+                .toList();
+    }
+
     @PostMapping
     public StoredStrategyDto create(@RequestBody StrategyUpsertRequestDto strategyUpsertRequestDto) {
         CurrentUser currentUser = currentUserAccessor.requireCurrentUser();
@@ -100,8 +107,8 @@ public class StrategyController {
             @RequestBody StrategyUpsertRequestDto strategyUpsertRequestDto) {
         CurrentUser currentUser = currentUserAccessor.requireCurrentUser();
         return strategyService.update(
-                        currentUser,
-                        strategyDocumentMapper.toCommand(id, strategyUpsertRequestDto))
+                currentUser,
+                strategyDocumentMapper.toCommand(id, strategyUpsertRequestDto))
                 .map(strategyDocumentMapper::toStoredDto)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());

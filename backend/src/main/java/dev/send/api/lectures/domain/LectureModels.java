@@ -14,6 +14,11 @@ import dev.send.api.worker.application.StrategySimulationConfig;
 public final class LectureModels {
     private LectureModels() {}
 
+    public record LecturePath(
+            String slug,
+            String title,
+            @Nullable String description) {}
+
     public record LectureCategory(
             String slug,
             String title,
@@ -49,6 +54,7 @@ public final class LectureModels {
     public record LectureDefinition(
             String id,
             String slug,
+            LecturePath path,
             LectureCategory category,
             String title,
             String summary,

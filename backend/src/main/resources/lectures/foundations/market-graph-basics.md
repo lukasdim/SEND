@@ -1,4 +1,4 @@
-:::lecture { "id": "foundations--market-graph-basics", "slug": "market-graph-basics", "category": { "slug": "foundations", "title": "Foundations", "description": "Start with the structure of SEND lectures, the flow of gated sublectures, and the first graph-building patterns.", "hero": "Category-driven learning paths with unlockable checkpoints." }, "title": "Building Your First Decision Graph", "summary": "Learn how SEND lectures unlock in stages while you build a tiny graph between each sublecture.", "estimatedMinutes": 12 }
+:::lecture { "id": "logic--foundations--market-graph-basics", "slug": "market-graph-basics", "path": { "slug": "logic", "title": "Logic", "description": "Reasoning-focused lessons and graph-building fundamentals." }, "category": { "slug": "foundations", "title": "Foundations", "description": "Start with the structure of SEND lectures, the flow of gated sublectures, and the first graph-building patterns.", "hero": "Category-driven learning paths with unlockable checkpoints." }, "title": "Building Your First Decision Graph", "summary": "Learn how SEND lectures unlock in stages while you build a tiny graph between each sublecture.", "estimatedMinutes": 12 }
 :::sublecture { "id":"getting-started", "title":"Getting Started" }
 # Getting Started
 
@@ -34,10 +34,7 @@ Read the current section, then use the mini-sandbox below to place the first req
   ],
   "sandboxPreset": {
     "allowedNodeTypes": ["buy", "fetch_price", "const_number"],
-    "starterNodes": [
-      { "id": "starter-price", "type": "fetch_price", "position": { "x": 60, "y": 120 } },
-      { "id": "starter-number", "type": "const_number", "position": { "x": 60, "y": 250 } }
-    ],
+    "starterNodes": [],
     "starterEdges": []
   },
   "validation": [

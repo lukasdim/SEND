@@ -1,3 +1,9 @@
+export type LecturePath = {
+  slug: string;
+  title: string;
+  description?: string;
+};
+
 export type LectureCategory = {
   slug: string;
   title: string;
@@ -73,6 +79,7 @@ export type SublectureDefinition = {
 export type LectureDefinition = {
   id: string;
   slug: string;
+  pathSlug: string;
   categorySlug: string;
   title: string;
   summary: string;
@@ -81,21 +88,26 @@ export type LectureDefinition = {
 };
 
 export type LectureDetailResponse = LectureDefinition & {
+  path: LecturePath;
   category: LectureCategory;
   progress: LectureProgress;
 };
 
 export type LectureCatalogItem = Pick<
   LectureDefinition,
-  "id" | "slug" | "categorySlug" | "title" | "summary" | "estimatedMinutes"
+  "id" | "slug" | "pathSlug" | "categorySlug" | "title" | "summary" | "estimatedMinutes"
 >;
 
 export type LectureCatalogCategory = LectureCategory & {
   lectures: LectureCatalogItem[];
 };
 
-export type LectureCatalogResponse = {
+export type LectureCatalogPath = LecturePath & {
   categories: LectureCatalogCategory[];
+};
+
+export type LectureCatalogResponse = {
+  paths: LectureCatalogPath[];
 };
 
 export type LectureCheckpointSubmission = {

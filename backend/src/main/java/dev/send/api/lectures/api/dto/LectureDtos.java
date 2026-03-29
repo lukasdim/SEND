@@ -13,6 +13,12 @@ import dev.send.api.strategy.api.dto.StrategySimulationConfigDto;
 public final class LectureDtos {
     private LectureDtos() {}
 
+    public record LectureCatalogPathDto(
+            String slug,
+            String title,
+            @Nullable String description,
+            List<LectureCatalogCategoryDto> categories) {}
+
     public record LectureCatalogCategoryDto(
             String slug,
             String title,
@@ -23,13 +29,19 @@ public final class LectureDtos {
     public record LectureCatalogItemDto(
             String id,
             String slug,
+            String pathSlug,
             String categorySlug,
             String title,
             String summary,
             int estimatedMinutes) {}
 
     public record LectureCatalogResponseDto(
-            List<LectureCatalogCategoryDto> categories) {}
+            List<LectureCatalogPathDto> paths) {}
+
+    public record LecturePathDto(
+            String slug,
+            String title,
+            @Nullable String description) {}
 
     public record LectureCategoryDto(
             String slug,
@@ -69,10 +81,12 @@ public final class LectureDtos {
     public record LectureDetailResponseDto(
             String id,
             String slug,
+            String pathSlug,
             String categorySlug,
             String title,
             String summary,
             int estimatedMinutes,
+            LecturePathDto path,
             LectureCategoryDto category,
             List<LectureSublectureDto> sublectures,
             LectureProgressDto progress) {}

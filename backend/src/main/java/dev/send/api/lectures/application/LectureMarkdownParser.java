@@ -18,6 +18,7 @@ import dev.send.api.lectures.domain.LectureModels.LectureCheckpointRule;
 import dev.send.api.lectures.domain.LectureModels.LectureCheckpointTask;
 import dev.send.api.lectures.domain.LectureModels.LectureDefinition;
 import dev.send.api.lectures.domain.LectureModels.LectureHeading;
+import dev.send.api.lectures.domain.LectureModels.LecturePath;
 import dev.send.api.lectures.domain.LectureModels.LectureSandboxEdge;
 import dev.send.api.lectures.domain.LectureModels.LectureSandboxNode;
 import dev.send.api.lectures.domain.LectureModels.LectureSandboxPreset;
@@ -98,6 +99,12 @@ public class LectureMarkdownParser {
             throw new LectureValidationException("Lecture markdown must contain at least one sublecture.");
         }
 
+        JsonNode pathNode = lectureMetadata.path("path");
+        LecturePath path = new LecturePath(
+                requiredText(pathNode, "slug"),
+                requiredText(pathNode, "title"),
+                optionalText(pathNode, "description"));
+
         JsonNode categoryNode = lectureMetadata.path("category");
         LectureCategory category = new LectureCategory(
                 requiredText(categoryNode, "slug"),
@@ -108,6 +115,7 @@ public class LectureMarkdownParser {
         return new LectureDefinition(
                 requiredText(lectureMetadata, "id"),
                 requiredText(lectureMetadata, "slug"),
+                path,
                 category,
                 requiredText(lectureMetadata, "title"),
                 requiredText(lectureMetadata, "summary"),

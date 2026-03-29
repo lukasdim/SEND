@@ -45,6 +45,7 @@ import dev.send.api.worker.application.StrategyExecutionService;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/api/strategies")
@@ -99,8 +100,8 @@ public class StrategyController {
             @RequestBody StrategyUpsertRequestDto strategyUpsertRequestDto) {
         CurrentUser currentUser = currentUserAccessor.requireCurrentUser();
         return strategyService.update(
-                        currentUser,
-                        strategyDocumentMapper.toCommand(id, strategyUpsertRequestDto))
+                currentUser,
+                strategyDocumentMapper.toCommand(id, strategyUpsertRequestDto))
                 .map(strategyDocumentMapper::toStoredDto)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());

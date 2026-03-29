@@ -49,12 +49,20 @@ class LectureApiIntegrationTests {
     void listsAndServesLectureCatalogAndFirstUnlockedSublectureAnonymously() throws Exception {
         mockMvc.perform(get("/api/lectures"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.categories[0].slug").value("foundations"))
-                .andExpect(jsonPath("$.categories[0].lectures[0].slug").value("market-graph-basics"));
+                .andExpect(jsonPath("$.paths[0].slug").value("logic"))
+                .andExpect(jsonPath("$.paths[0].categories[0].slug").value("getting-started"))
+                .andExpect(jsonPath("$.paths[0].categories[0].lectures[0].slug").value("what-is-a-graph-system"))
+                .andExpect(jsonPath("$.paths[0].categories[1].slug").value("foundations"))
+                .andExpect(jsonPath("$.paths[0].categories[1].lectures[0].slug").value("market-graph-basics"))
+                .andExpect(jsonPath("$.paths[1].slug").value("economics"))
+                .andExpect(jsonPath("$.paths[1].categories[0].slug").value("getting-started"))
+                .andExpect(jsonPath("$.paths[1].categories[0].lectures").isEmpty());
 
-        mockMvc.perform(get("/api/lectures/foundations/market-graph-basics"))
+        mockMvc.perform(get("/api/lectures/logic/foundations/market-graph-basics"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value("foundations--market-graph-basics"))
+                .andExpect(jsonPath("$.id").value("logic--foundations--market-graph-basics"))
+                .andExpect(jsonPath("$.pathSlug").value("logic"))
+                .andExpect(jsonPath("$.path.slug").value("logic"))
                 .andExpect(jsonPath("$.sublectures[0].contentSource").exists())
                 .andExpect(jsonPath("$.sublectures[1].contentSource").doesNotExist())
                 .andExpect(jsonPath("$.progress.highestUnlockedSublectureIndex").value(0));
@@ -66,8 +74,8 @@ class LectureApiIntegrationTests {
                 .withoutPadding()
                 .encodeToString("""
                         {
-                          "foundations--market-graph-basics": {
-                            "lectureId": "foundations--market-graph-basics",
+                          "logic--foundations--market-graph-basics": {
+                            "lectureId": "logic--foundations--market-graph-basics",
                             "highestUnlockedSublectureIndex": 99,
                             "completedCheckpointIds": ["checkpoint-place-buy"],
                             "activeCheckpointState": {}
@@ -75,7 +83,7 @@ class LectureApiIntegrationTests {
                         }
                         """.getBytes(StandardCharsets.UTF_8));
 
-        mockMvc.perform(get("/api/lectures/foundations/market-graph-basics")
+        mockMvc.perform(get("/api/lectures/logic/foundations/market-graph-basics")
                         .header("Cookie", "send_lecture_progress=" + unsignedCookiePayload))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sublectures[1].contentSource").doesNotExist())
@@ -85,7 +93,7 @@ class LectureApiIntegrationTests {
 
     @Test
     void anonymousCheckpointVerificationStillPersistsCookieBackedProgress() throws Exception {
-        MvcResult verifyResult = mockMvc.perform(post("/api/lectures/foundations--market-graph-basics/checkpoints/checkpoint-place-buy/verify")
+        MvcResult verifyResult = mockMvc.perform(post("/api/lectures/logic--foundations--market-graph-basics/checkpoints/checkpoint-place-buy/verify")
                         .contentType(APPLICATION_JSON)
                         .content(verifyPayload()))
                 .andExpect(status().isOk())
@@ -96,7 +104,7 @@ class LectureApiIntegrationTests {
 
         Cookie lectureProgressCookie = parseLectureProgressCookie(verifyResult);
 
-        mockMvc.perform(get("/api/lectures/foundations/market-graph-basics")
+        mockMvc.perform(get("/api/lectures/logic/foundations/market-graph-basics")
                         .cookie(lectureProgressCookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sublectures[1].contentSource").exists())
@@ -105,11 +113,11 @@ class LectureApiIntegrationTests {
 
     @Test
     void anonymousProgressSaveCannotAdvanceUnlockState() throws Exception {
-        MvcResult saveResult = mockMvc.perform(post("/api/lectures/foundations--market-graph-basics/progress")
+        MvcResult saveResult = mockMvc.perform(post("/api/lectures/logic--foundations--market-graph-basics/progress")
                         .contentType(APPLICATION_JSON)
                         .content("""
                                 {
-                                  "lectureId": "foundations--market-graph-basics",
+                                  "lectureId": "logic--foundations--market-graph-basics",
                                   "highestUnlockedSublectureIndex": 99,
                                   "completedCheckpointIds": ["checkpoint-place-buy"],
                                   "activeCheckpointState": {
@@ -130,7 +138,7 @@ class LectureApiIntegrationTests {
 
         Cookie savedCookie = parseLectureProgressCookie(saveResult);
 
-        mockMvc.perform(get("/api/lectures/foundations/market-graph-basics")
+        mockMvc.perform(get("/api/lectures/logic/foundations/market-graph-basics")
                         .cookie(savedCookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sublectures[1].contentSource").doesNotExist())
@@ -141,7 +149,7 @@ class LectureApiIntegrationTests {
 
     @Test
     void authenticatedLectureReadsImportCookieProgressOnceAndThenPreferDatabaseState() throws Exception {
-        MvcResult verifyResult = mockMvc.perform(post("/api/lectures/foundations--market-graph-basics/checkpoints/checkpoint-place-buy/verify")
+        MvcResult verifyResult = mockMvc.perform(post("/api/lectures/logic--foundations--market-graph-basics/checkpoints/checkpoint-place-buy/verify")
                         .contentType(APPLICATION_JSON)
                         .content(verifyPayload()))
                 .andExpect(status().isOk())
@@ -149,14 +157,14 @@ class LectureApiIntegrationTests {
 
         Cookie importedCookie = parseLectureProgressCookie(verifyResult);
 
-        mockMvc.perform(get("/api/lectures/foundations/market-graph-basics")
+        mockMvc.perform(get("/api/lectures/logic/foundations/market-graph-basics")
                         .header("Authorization", "Bearer valid-user-1")
                         .cookie(importedCookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.progress.highestUnlockedSublectureIndex").value(1))
                 .andExpect(jsonPath("$.sublectures[1].contentSource").exists());
 
-        mockMvc.perform(get("/api/lectures/foundations/market-graph-basics")
+        mockMvc.perform(get("/api/lectures/logic/foundations/market-graph-basics")
                         .header("Authorization", "Bearer valid-user-1")
                         .header("Cookie", "send_lecture_progress=malformed-cookie"))
                 .andExpect(status().isOk())
@@ -166,7 +174,7 @@ class LectureApiIntegrationTests {
 
     @Test
     void authenticatedCheckpointVerificationPersistsWithoutRelyingOnCookieState() throws Exception {
-        mockMvc.perform(post("/api/lectures/foundations--market-graph-basics/checkpoints/checkpoint-place-buy/verify")
+        mockMvc.perform(post("/api/lectures/logic--foundations--market-graph-basics/checkpoints/checkpoint-place-buy/verify")
                         .header("Authorization", "Bearer valid-user-2")
                         .contentType(APPLICATION_JSON)
                         .content(verifyPayload()))
@@ -174,7 +182,7 @@ class LectureApiIntegrationTests {
                 .andExpect(jsonPath("$.passed").value(true))
                 .andExpect(jsonPath("$.newlyUnlockedSublectureIndex").value(1));
 
-        mockMvc.perform(get("/api/lectures/foundations/market-graph-basics")
+        mockMvc.perform(get("/api/lectures/logic/foundations/market-graph-basics")
                         .header("Authorization", "Bearer valid-user-2"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.progress.highestUnlockedSublectureIndex").value(1))
@@ -183,7 +191,7 @@ class LectureApiIntegrationTests {
 
     @Test
     void rejectsOutOfOrderCheckpointVerification() throws Exception {
-        mockMvc.perform(post("/api/lectures/foundations--market-graph-basics/checkpoints/checkpoint-wire-if/verify")
+        mockMvc.perform(post("/api/lectures/logic--foundations--market-graph-basics/checkpoints/checkpoint-wire-if/verify")
                         .contentType(APPLICATION_JSON)
                         .content("""
                                 {

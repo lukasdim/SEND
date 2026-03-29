@@ -73,6 +73,18 @@ class LectureApiIntegrationTests {
         }
 
         @Test
+        void revealsAllContiguousSublecturesWhenNoCheckpointGatesThem() throws Exception {
+                mockMvc.perform(get("/api/lectures/logic/getting-started/what-is-send"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.id").value("logic--getting-started--what-is-send"))
+                                .andExpect(jsonPath("$.sublectures[0].contentSource").exists())
+                                .andExpect(jsonPath("$.sublectures[1].contentSource").exists())
+                                .andExpect(jsonPath("$.sublectures[2].contentSource").exists())
+                                .andExpect(jsonPath("$.sublectures[3].contentSource").exists())
+                                .andExpect(jsonPath("$.progress.highestUnlockedSublectureIndex").value(3));
+        }
+
+        @Test
         void ignoresUnsignedAnonymousProgressCookies() throws Exception {
                 String unsignedCookiePayload = Base64.getUrlEncoder()
                                 .withoutPadding()

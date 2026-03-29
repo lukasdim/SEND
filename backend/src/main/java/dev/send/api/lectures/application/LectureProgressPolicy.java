@@ -43,6 +43,7 @@ public class LectureProgressPolicy {
         int finalUnlockedIndex = Math.min(
                 Math.max(normalizedUnlockedIndex, highestIndexFromCompletedCheckpoints),
                 maxUnlockedIndex);
+        finalUnlockedIndex = expandThroughUngatedSublectures(lecture, finalUnlockedIndex);
 
         Map<String, LectureCheckpointState> activeCheckpointState = progress.activeCheckpointState().entrySet().stream()
                 .filter(entry -> knownCheckpointIds.contains(entry.getKey()))
@@ -57,6 +58,15 @@ public class LectureProgressPolicy {
                 finalUnlockedIndex,
                 completedCheckpointIds,
                 Map.copyOf(activeCheckpointState));
+    }
+
+    private int expandThroughUngatedSublectures(LectureDefinition lecture, int unlockedIndex) {
+        int expandedIndex = unlockedIndex;
+        while (expandedIndex < lecture.sublectures().size() - 1
+                && lecture.sublectures().get(expandedIndex).checkpointAfter() == null) {
+            expandedIndex++;
+        }
+        return expandedIndex;
     }
 
     public LectureProgress constrainClientUpdate(

@@ -117,6 +117,16 @@ type ReplaySignal = {
   nodeDisplayName: string | null;
 };
 
+type ReplayPreviewTone = "neutral" | "positive" | "negative" | "warning";
+
+type ReplayPreviewEntry = {
+  id: string;
+  label: string;
+  value: string;
+  tone: ReplayPreviewTone;
+  iconColor: string;
+};
+
 type ReplayDayModel = {
   index: number;
   date: string;
@@ -129,7 +139,7 @@ type ReplayDayModel = {
   changedOutputCount: number;
   trace: StrategySimulationTraceDay;
   positions: ReplayPosition[];
-  previewLines: string[];
+  previewLines: ReplayPreviewEntry[];
   nodeIssueMap: Map<string, NodeErrorState>;
   signals: ReplaySignal[];
 };
@@ -797,60 +807,89 @@ function summarizeOutputValue(value: JsonScalar): string {
 function createReplayPreviewLines(
   traceDay: StrategySimulationTraceDay,
   nodeNameById: Map<string, string>
-): string[] {
-  const nextLines: string[] = [];
+): ReplayPreviewEntry[] {
+  const nextLines: ReplayPreviewEntry[] = [];
+  const pushLine = (entry: ReplayPreviewEntry) => {
+    if (nextLines.length >= 4) return;
+    nextLines.push(entry);
+  };
 
   for (const nodeChange of traceDay.nodeChanges) {
     const outputEntries = Object.entries(nodeChange.outputs);
     if (outputEntries.length === 0) continue;
-    const [firstOutputKey, firstOutputValue] = outputEntries[0];
+    const [, firstOutputValue] = outputEntries[0];
     const nodeLabel = nodeNameById.get(nodeChange.nodeId) ?? nodeChange.nodeId;
-    nextLines.push(`${nodeLabel}: ${firstOutputKey} = ${summarizeOutputValue(firstOutputValue)}`);
-    if (nextLines.length >= 4) break;
+    pushLine({
+      id: `node-${nodeChange.nodeId}`,
+      label: nodeLabel,
+      value: summarizeOutputValue(firstOutputValue),
+      tone: "neutral",
+      iconColor: "#5CA7FF",
+    });
   }
 
   if (nextLines.length === 0 && traceDay.trades.length > 0) {
+    let tradeIndex = 0;
     for (const trade of traceDay.trades.slice(0, 4)) {
-      nextLines.push(
-        `${trade.action.toUpperCase()} ${trade.ticker}: ${formatSignedNumber(trade.filledShares)} @ ${formatCurrency(trade.fillPrice)}`
-      );
+      const action = trade.action.toLowerCase();
+      const isBuy = action === "buy";
+      pushLine({
+        id: `trade-${tradeIndex}-${action}-${trade.ticker}`,
+        label: `${action.toUpperCase()} ${trade.ticker}`,
+        value: `${formatSignedNumber(trade.filledShares)} @ ${formatCurrency(trade.fillPrice)}`,
+        tone: isBuy ? "positive" : "negative",
+        iconColor: isBuy ? "#30C48D" : "#E24B4A",
+      });
+      tradeIndex += 1;
     }
   }
 
   if (nextLines.length === 0 && traceDay.errors.length > 0) {
-    return traceDay.errors.slice(0, 3);
+    traceDay.errors.slice(0, 3).forEach((error, index) =>
+      pushLine({
+        id: `error-${index}`,
+        label: "Error",
+        value: error,
+        tone: "negative",
+        iconColor: "#E24B4A",
+      })
+    );
   }
 
   if (nextLines.length === 0 && traceDay.warnings.length > 0) {
-    return traceDay.warnings.slice(0, 3);
-  }
-
-  if (nextLines.length === 0) {
-    return ["No node output values changed from the previous day."];
+    traceDay.warnings.slice(0, 3).forEach((warning, index) =>
+      pushLine({
+        id: `warning-${index}`,
+        label: "Warning",
+        value: warning,
+        tone: "warning",
+        iconColor: "#E8A33B",
+      })
+    );
   }
 
   return nextLines;
 }
 
 function createReplayDotMarkers(traceDay: StrategySimulationTraceDay): string[] {
-  const nextMarkers: string[] = [];
+  const markers = new Set<string>();
   const hasBuy = traceDay.trades.some((trade) => trade.action.toLowerCase() === "buy");
   const hasSell = traceDay.trades.some((trade) => trade.action.toLowerCase() === "sell");
   const hasWarning = traceDay.warnings.length > 0;
 
   if (hasBuy) {
-    nextMarkers.push("B");
+    markers.add("B");
   }
 
   if (hasSell) {
-    nextMarkers.push("S");
+    markers.add("S");
   }
 
   if (hasWarning) {
-    nextMarkers.push("!");
+    markers.add("!");
   }
 
-  return nextMarkers;
+  return ["B", "S", "!"].filter((marker) => markers.has(marker));
 }
 
 function applyTradeToReplayPositions(
@@ -1901,46 +1940,143 @@ function ReplayTimeline({
 
       <div
         style={{
-          marginBottom: 10,
-          padding: "10px 12px",
-          borderRadius: 10,
-          border: `1px solid ${
-            activeDay.status === "error"
-              ? "#E24B4A"
-              : activeDay.status === "warning"
-                ? "#E8A33B"
-                : UI_BORDER_SUBTLE
-          }`,
-          background:
-            activeDay.status === "error"
-              ? "rgba(226, 75, 74, 0.08)"
-              : activeDay.status === "warning"
-                ? "rgba(232, 163, 59, 0.08)"
-                : UI_CARD,
+          marginBottom: 12,
+          padding: 12,
+          borderRadius: 12,
+          border: `1px solid ${UI_BORDER_SUBTLE}`,
+          background: UI_CARD,
+          boxShadow: `0 6px 18px ${withAlpha(UI_CANVAS, 0.35)}`,
           display: "flex",
           flexDirection: "column",
-          gap: 6,
+          gap: 12,
         }}
       >
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 11, color: UI_TEXT_SECONDARY }}>
-          <span>Equity {formatCurrency(activeDay.trace.balanceSnapshot.equity)}</span>
-          <span>Cash {formatCurrency(activeDay.trace.balanceSnapshot.cash)}</span>
-          <span>Realized {formatSignedCurrency(activeDay.trace.balanceSnapshot.realizedPnl)}</span>
-          <span style={{ color: activeDayPnl >= 0 ? "#6FD58A" : "#F07A7A" }}>
-            Day P/L {formatSignedCurrency(activeDayPnl)}
-          </span>
-        </div>
-        {activeDay.previewLines.length > 0 ? (
-          activeDay.previewLines.map((line) => (
-            <div key={`${activeDay.date}-${line}`} style={{ fontSize: 12, color: UI_TEXT_PRIMARY }}>
-              {line}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {[
+            {
+              label: "Equity",
+              value: formatCurrency(activeDay.trace.balanceSnapshot.equity),
+              tone: "neutral" as const,
+            },
+            {
+              label: "Cash",
+              value: formatCurrency(activeDay.trace.balanceSnapshot.cash),
+              tone: "neutral" as const,
+            },
+            {
+              label: "Realized",
+              value: formatSignedCurrency(activeDay.trace.balanceSnapshot.realizedPnl),
+              tone: activeDay.trace.balanceSnapshot.realizedPnl >= 0 ? ("positive" as const) : ("negative" as const),
+            },
+            {
+              label: "Day P/L",
+              value: formatSignedCurrency(activeDayPnl),
+              tone: activeDayPnl >= 0 ? ("positive" as const) : ("negative" as const),
+            },
+          ].map((card) => (
+            <div
+              key={card.label}
+              style={{
+                minWidth: 140,
+                flex: "1 1 140px",
+                padding: "10px 12px",
+                borderRadius: 10,
+                background: UI_PANEL,
+                border: `1px solid ${withAlpha(UI_BORDER_STRONG, 0.6)}`,
+              }}
+            >
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: UI_TEXT_SECONDARY }}>
+                {card.label.toUpperCase()}
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 16,
+                  fontWeight: 700,
+                  color: card.tone === "positive" ? "#6FD58A" : card.tone === "negative" ? "#F07A7A" : UI_TEXT_PRIMARY,
+                }}
+              >
+                {card.value}
+              </div>
             </div>
-          ))
-        ) : (
-          <div style={{ fontSize: 12, color: UI_TEXT_SECONDARY }}>
-            No node output values changed from the previous day.
+          ))}
+        </div>
+
+        <div
+          style={{
+            borderRadius: 10,
+            border: `1px solid ${withAlpha(UI_BORDER_STRONG, 0.7)}`,
+            background: UI_PANEL,
+            padding: 10,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: UI_TEXT_SECONDARY }}>
+              Event Log
+            </div>
+            <div
+              style={{
+                padding: "2px 8px",
+                borderRadius: 999,
+                border: `1px solid ${UI_BORDER_SUBTLE}`,
+                fontSize: 10,
+                color: UI_TEXT_SECONDARY,
+              }}
+            >
+              {activeDay.previewLines.length} {activeDay.previewLines.length === 1 ? "event" : "events"}
+            </div>
           </div>
-        )}
+          {activeDay.previewLines.length > 0 ? (
+            activeDay.previewLines.map((entry) => (
+              <div
+                key={`${activeDay.date}-${entry.id}`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  fontSize: 12,
+                  color: UI_TEXT_PRIMARY,
+                }}
+              >
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 999,
+                    background: entry.iconColor,
+                    flexShrink: 0,
+                  }}
+                />
+                <div style={{ flex: 1, display: "flex", justifyContent: "space-between", gap: 12, minWidth: 0 }}>
+                  <span style={{ color: UI_TEXT_SECONDARY, fontWeight: 700, letterSpacing: "0.03em" }}>
+                    {entry.label}
+                  </span>
+                  <span
+                    style={{
+                      color:
+                        entry.tone === "positive"
+                          ? "#6FD58A"
+                          : entry.tone === "negative"
+                            ? "#F07A7A"
+                            : entry.tone === "warning"
+                              ? "#E8A33B"
+                              : UI_TEXT_PRIMARY,
+                      fontWeight: 700,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {entry.value}
+                  </span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div style={{ fontSize: 12, color: UI_TEXT_SECONDARY }}>No events for this day.</div>
+          )}
+        </div>
       </div>
 
       <div
@@ -1983,8 +2119,8 @@ function ReplayTimeline({
             const isHovered = day.index === hoveredDayIndex;
             const pnlBackground = day.dailyPnl > 0 ? "#2EA66B" : day.dailyPnl < 0 ? "#E24B4A" : UI_TEXT_SECONDARY;
             const markerCount = day.dotMarkers.length;
-            const markerGroupWidth = markerCount > 1 ? 26 : markerCount === 1 ? 16 : 0;
-            const buttonWidth = Math.max(isHovered || isSelected ? 18 : 14, markerGroupWidth);
+            const markerGroupWidth = markerCount > 1 ? 30 : markerCount === 1 ? 18 : 0;
+            const buttonWidth = Math.max(isHovered || isSelected ? 20 : 16, markerGroupWidth);
             const background =
               isSelected
                 ? UI_ACCENT
@@ -2026,9 +2162,9 @@ function ReplayTimeline({
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      gap: 2,
+                      gap: 3,
                       color: UI_CANVAS,
-                      fontSize: day.dotMarkers.length > 1 ? 8 : 9,
+                      fontSize: day.dotMarkers.length > 1 ? 9 : 10,
                       fontWeight: 800,
                       letterSpacing: "0.01em",
                       lineHeight: 1,
@@ -2040,8 +2176,7 @@ function ReplayTimeline({
                         key={`${day.date}-${marker}`}
                         style={{
                           color: marker === "!" ? "#E8A33B" : UI_CANVAS,
-                          textShadow:
-                            "-1px 0 0 #FFFFFF, 1px 0 0 #FFFFFF, 0 -1px 0 #FFFFFF, 0 1px 0 #FFFFFF, -1px -1px 0 #FFFFFF, 1px -1px 0 #FFFFFF, -1px 1px 0 #FFFFFF, 1px 1px 0 #FFFFFF",
+                          textShadow: "0 1px 2px rgba(0, 0, 0, 0.25)",
                         }}
                       >
                         {marker}

@@ -109,6 +109,14 @@ type ReplayPosition = {
   averageCost: number;
 };
 
+type ReplaySignal = {
+  id: string;
+  severity: NodeIssueSeverity;
+  summary: string;
+  nodeId: string | null;
+  nodeDisplayName: string | null;
+};
+
 type ReplayDayModel = {
   index: number;
   date: string;
@@ -122,6 +130,8 @@ type ReplayDayModel = {
   trace: StrategySimulationTraceDay;
   positions: ReplayPosition[];
   previewLines: string[];
+  nodeIssueMap: Map<string, NodeErrorState>;
+  signals: ReplaySignal[];
 };
 
 type ReplaySession = {
@@ -916,6 +926,9 @@ function buildReplayDays(
       Object.entries(cumulativeRuntimeResults).map(([nodeId, outputs]) => [nodeId, { ...outputs }])
     );
 
+    const nodeIssueMap = buildReplayNodeIssueMap(traceDay);
+    const signals = createReplaySignals(traceDay, nodeNameById);
+
     return {
       index,
       date: traceDay.date,
@@ -934,6 +947,8 @@ function buildReplayDays(
       trace: traceDay,
       positions: sortReplayPositions([...positionsByTicker.values()]),
       previewLines: createReplayPreviewLines(traceDay, nodeNameById),
+      nodeIssueMap,
+      signals,
     };
   });
 }
@@ -961,6 +976,34 @@ function extractReplayIssueNodeId(message: string): string | null {
   return null;
 }
 
+function createReplaySignals(
+  traceDay: StrategySimulationTraceDay,
+  nodeNameById: Map<string, string>
+): ReplaySignal[] {
+  const nextSignals: ReplaySignal[] = [];
+
+  const pushSignal = (message: string, severity: NodeIssueSeverity, index: number) => {
+    const summary = stripReplayIssuePrefix(message);
+    const nodeId = extractReplayIssueNodeId(message);
+    const nodeDisplayName = nodeId ? nodeNameById.get(nodeId) ?? null : null;
+
+    nextSignals.push({
+      id: `${severity}:${index}:${nodeId ?? "global"}`,
+      severity,
+      summary,
+      nodeId,
+      nodeDisplayName,
+    });
+  };
+
+  traceDay.errors.forEach((error, index) => pushSignal(error, "error", index));
+  traceDay.warnings.forEach((warning, index) =>
+    pushSignal(warning, "warning", traceDay.errors.length + index)
+  );
+
+  return nextSignals;
+}
+
 function buildReplayNodeIssueMap(traceDay: StrategySimulationTraceDay): Map<string, NodeErrorState> {
   const issuesByNodeId = new Map<
     string,
@@ -971,29 +1014,29 @@ function buildReplayNodeIssueMap(traceDay: StrategySimulationTraceDay): Map<stri
     }
   >();
 
+  const summaryForSeverity = (severity: NodeIssueSeverity) =>
+    severity === "error" ? "Needs attention" : "Needs review";
+
   const registerIssue = (severity: NodeIssueSeverity, rawMessage: string) => {
     const nodeId = extractReplayIssueNodeId(rawMessage);
     if (!nodeId) return;
 
     const cleanedMessage = stripReplayIssuePrefix(rawMessage);
     const existing = issuesByNodeId.get(nodeId);
-    if (!existing) {
-      issuesByNodeId.set(nodeId, {
-        severity,
-        summary: cleanedMessage,
-        details: [cleanedMessage],
-      });
-      return;
-    }
-
-    const nextSeverity = existing.severity === "error" || severity === "error" ? "error" : "warning";
-    const nextDetails = existing.details.includes(cleanedMessage)
-      ? existing.details
-      : [...existing.details, cleanedMessage];
+    const nextSeverity = existing
+      ? existing.severity === "error" || severity === "error"
+        ? "error"
+        : "warning"
+      : severity;
+    const nextDetails = existing
+      ? existing.details.includes(cleanedMessage)
+        ? existing.details
+        : [...existing.details, cleanedMessage]
+      : [cleanedMessage];
 
     issuesByNodeId.set(nodeId, {
       severity: nextSeverity,
-      summary: existing.severity === "error" ? existing.summary : cleanedMessage,
+      summary: summaryForSeverity(nextSeverity),
       details: nextDetails,
     });
   };
@@ -1031,7 +1074,7 @@ function estimateReplayNodeHeight(node: Node<NodeData>): number {
   }
 
   if (nodeData.errorState) {
-    height += 94 + (nodeData.errorState.details?.length ?? 0) * 18;
+    height += 90;
   }
 
   if (nodeData.runtimeResult && Object.keys(nodeData.runtimeResult).length > 0) {
@@ -2108,6 +2151,8 @@ function SandboxInner() {
   const [selectedReplayDayIndex, setSelectedReplayDayIndex] = useState(0);
   const [hoveredReplayDayIndex, setHoveredReplayDayIndex] = useState<number | null>(null);
   const [isReplayTimelineHighlighted, setIsReplayTimelineHighlighted] = useState(false);
+  const [replayFocusedNodeId, setReplayFocusedNodeId] = useState<string | null>(null);
+  const [hoveredSignalId, setHoveredSignalId] = useState<string | null>(null);
   const timeoutRef = useRef<number | null>(null);
   const replayHighlightTimeoutRef = useRef<number | null>(null);
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
@@ -2209,19 +2254,23 @@ function SandboxInner() {
     };
   }, [isStrategyTestCoolingDown]);
 
+  useEffect(() => {
+    setReplayFocusedNodeId(null);
+  }, [sandboxMode, simulationSession?.graphSignature]);
+
   const replayNodes = useMemo(() => {
     if (!simulationSession || !activeReplayDay) return [];
-    const replayNodeIssueMap = buildReplayNodeIssueMap(activeReplayDay.trace);
+    const nodeIssueMap = activeReplayDay.nodeIssueMap;
 
     const mappedNodes = simulationSession.graphSnapshot.nodes.map((node) => {
       const nodeData = node.data as NodeData;
       const runtimeResult = activeReplayDay.runtimeResults[node.id];
       const changedToday = activeReplayDay.changedNodeIds.has(node.id);
-      const replayIssue = replayNodeIssueMap.get(node.id);
+      const replayIssue = nodeIssueMap.get(node.id);
 
       return {
         ...node,
-        selected: false,
+        selected: replayFocusedNodeId === node.id,
         zIndex: runtimeResult || replayIssue ? 20 : 1,
         data: {
           ...nodeData,
@@ -2239,7 +2288,7 @@ function SandboxInner() {
     });
 
     return applyReplayNodeSpacing(mappedNodes);
-  }, [activeReplayDay, simulationSession]);
+  }, [activeReplayDay, replayFocusedNodeId, simulationSession]);
   const replayEdges = useMemo(
     () =>
       simulationSession
@@ -2465,6 +2514,17 @@ function SandboxInner() {
       void setCenter(node.position.x, node.position.y, { zoom: 1.15, duration: 280 });
     },
     [nodes, setCenter, setNodes]
+  );
+
+  const jumpToReplayNode = useCallback(
+    (nodeId: string | null) => {
+      if (!nodeId || !simulationSession) return;
+      const targetNode = simulationSession.graphSnapshot.nodes.find((node) => node.id === nodeId);
+      if (!targetNode) return;
+      setReplayFocusedNodeId(nodeId);
+      void setCenter(targetNode.position.x, targetNode.position.y, { zoom: 1.15, duration: 280 });
+    },
+    [setCenter, simulationSession]
   );
 
   const focusIssueByIndex = useCallback(
@@ -2968,6 +3028,9 @@ function SandboxInner() {
       unrealizedPnl: undefined,
     }));
   }, [activeReplayDay, isFinalReplayDay, simulationSession]);
+  const activeReplaySignals = activeReplayDay?.signals ?? [];
+  const hasActiveReplaySignals = activeReplaySignals.length > 0;
+  const hasErrorSignal = activeReplaySignals.some((signal) => signal.severity === "error");
   const activeDraggedNode = paletteDrag ? nodePaletteByType.get(paletteDrag.nodeType) : undefined;
   const paletteGhostWidth = SANDBOX_NODE_WIDTH;
   const paletteGhostScale = paletteDrag
@@ -3511,28 +3574,105 @@ function SandboxInner() {
                 </div>
               </div>
 
-              {(activeReplayDay.trace.errors.length > 0 || activeReplayDay.trace.warnings.length > 0) && (
+              {hasActiveReplaySignals && (
                 <div
                   style={{
                     ...sidebarCardStyle,
-                    borderColor: activeReplayDay.trace.errors.length > 0 ? "#E24B4A" : "#E8A33B",
-                    background:
-                      activeReplayDay.trace.errors.length > 0
-                        ? "rgba(226, 75, 74, 0.08)"
-                        : "rgba(232, 163, 59, 0.08)",
+                    borderColor: hasErrorSignal ? "#E24B4A" : "#E8A33B",
+                    background: hasErrorSignal
+                      ? "rgba(226, 75, 74, 0.08)"
+                      : "rgba(232, 163, 59, 0.08)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
                   }}
                 >
                   <div style={sidebarSectionTitleStyle}>Signals</div>
-                  {activeReplayDay.trace.errors.map((error) => (
-                    <div key={error} style={{ fontSize: 12, color: UI_TEXT_PRIMARY, marginBottom: 6 }}>
-                      {error}
-                    </div>
-                  ))}
-                  {activeReplayDay.trace.warnings.map((warning) => (
-                    <div key={warning} style={{ fontSize: 12, color: UI_TEXT_PRIMARY, marginBottom: 6 }}>
-                      {warning}
-                    </div>
-                  ))}
+                  {activeReplaySignals.map((signal) => {
+                    const severityColor = signal.severity === "error" ? "#E24B4A" : "#E8A33B";
+                    const borderColor = withAlpha(severityColor, 0.35);
+                    const background = withAlpha(severityColor, 0.08);
+                    const nodeLabel = signal.nodeDisplayName ?? signal.nodeId ?? "General signal";
+                    const isNavigable = Boolean(signal.nodeId);
+                    const isHovered = hoveredSignalId === signal.id;
+
+                    const handleSignalClick = () => {
+                      if (!isNavigable) return;
+                      void jumpToReplayNode(signal.nodeId);
+                    };
+
+                    return (
+                      <button
+                        key={signal.id}
+                        type="button"
+                        onClick={handleSignalClick}
+                        onKeyDown={(event) => {
+                          if (!isNavigable) return;
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            handleSignalClick();
+                          }
+                        }}
+                        disabled={!isNavigable}
+                        onMouseEnter={() => setHoveredSignalId(signal.id)}
+                        onMouseLeave={() => setHoveredSignalId((current) => (current === signal.id ? null : current))}
+                        onFocus={() => setHoveredSignalId(signal.id)}
+                        onBlur={() => setHoveredSignalId((current) => (current === signal.id ? null : current))}
+                        style={{
+                          ...smallGhostButtonStyle,
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "stretch",
+                          gap: 6,
+                          border: `1px solid ${borderColor}`,
+                          background,
+                          padding: "10px",
+                          borderRadius: 8,
+                          textAlign: "left",
+                          width: "100%",
+                          cursor: isNavigable ? "pointer" : "not-allowed",
+                          transform: isHovered && isNavigable ? "scale(1.01)" : "scale(1)",
+                          transition: "transform 120ms ease",
+                          opacity: isNavigable ? 1 : 0.7,
+                          outline: "none",
+                        }}
+                        aria-disabled={!isNavigable}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 12,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                letterSpacing: "0.08em",
+                                textTransform: "uppercase",
+                                padding: "2px 8px",
+                                borderRadius: 999,
+                                background: withAlpha(severityColor, 0.18),
+                                color: severityColor,
+                              }}
+                            >
+                              {signal.severity === "error" ? "Error" : "Warning"}
+                            </span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: UI_TEXT_PRIMARY }}>
+                              {nodeLabel}
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 13, color: UI_TEXT_PRIMARY, lineHeight: 1.35 }}>
+                          {signal.summary}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 

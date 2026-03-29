@@ -486,16 +486,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
                   !
                 </div>
               </div>
-              <div style={{ fontSize: 12, lineHeight: 1.4 }}>{errorState.summary}</div>
-              {errorState.details && errorState.details.length > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  {errorState.details.map((detail) => (
-                    <div key={detail} style={{ fontSize: 11, lineHeight: 1.35, color: UI_TEXT_SECONDARY }}>
-                      {detail}
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div style={{ fontSize: 11, color: UI_TEXT_SECONDARY }}>See Signals for the full diagnostic.</div>
             </div>
           )}
 

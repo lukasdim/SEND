@@ -93,7 +93,9 @@ export default function PageShell({ title, eyebrow, description, children }: Pag
             })}
           </nav>
 
-          <AuthPanel compact />
+          <div style={{ position: "relative" }}>
+            <AuthPanel compact />
+          </div>
         </header>
 
         <section style={{ marginBottom: 36 }}>

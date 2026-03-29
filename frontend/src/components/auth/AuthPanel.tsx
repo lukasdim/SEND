@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AUTH_PROVIDER_CONFIG } from "../../auth/providerConfig";
 import { useAuth } from "../../auth/AuthContext";
 
@@ -28,6 +28,8 @@ export default function AuthPanel({ compact = false }: AuthPanelProps) {
     updatePassword,
   } = useAuth();
 
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
   const [isOpen, setIsOpen] = useState(!compact);
   const [mode, setMode] = useState<AuthMode>("sign-in");
   const [email, setEmail] = useState("");
@@ -43,6 +45,29 @@ export default function AuthPanel({ compact = false }: AuthPanelProps) {
     setStatusMessage(null);
     setErrorMessage(null);
   };
+
+  useEffect(() => {
+    if (!compact || !isOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!wrapperRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [compact, isOpen]);
 
   const handleSubmit = async () => {
     resetMessages();
@@ -140,9 +165,6 @@ export default function AuthPanel({ compact = false }: AuthPanelProps) {
             <button type="button" onClick={() => onModeChange("sign-up")} style={mode === "sign-up" ? activeModeButtonStyle : modeButtonStyle}>
               Create account
             </button>
-            <button type="button" onClick={() => onModeChange("reset")} style={mode === "reset" ? activeModeButtonStyle : modeButtonStyle}>
-              Reset password
-            </button>
           </div>
         )}
 
@@ -165,6 +187,15 @@ export default function AuthPanel({ compact = false }: AuthPanelProps) {
               style={inputStyle}
               autoComplete={resolvedMode === "sign-in" ? "current-password" : "new-password"}
             />
+            {resolvedMode === "sign-in" && (
+              <button
+                type="button"
+                onClick={() => onModeChange("reset")}
+                style={forgotPasswordStyle}
+              >
+                Forgot password?
+              </button>
+            )}
           </>
         )}
 
@@ -206,11 +237,64 @@ export default function AuthPanel({ compact = false }: AuthPanelProps) {
     );
   };
 
+  const dropdownId = useMemo(() => "auth-panel-dropdown", []);
+
+  const panelContent = (
+    <div style={{ display: "grid", gap: 10 }}>
+      {renderBody()}
+      {statusMessage && <div style={{ ...bodyTextStyle, color: "#8FD4A8" }}>{statusMessage}</div>}
+      {errorMessage && <div style={{ ...bodyTextStyle, color: "#F58C8C" }}>{errorMessage}</div>}
+    </div>
+  );
+
+  if (compact) {
+    return (
+      <div ref={wrapperRef} style={{ position: "relative", minWidth: 220 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button
+            type="button"
+            onClick={() => setIsOpen((current) => !current)}
+            style={triggerButtonStyle}
+            aria-expanded={isOpen}
+            aria-controls={dropdownId}
+          >
+            {user ? "Account" : "Sign in"}
+          </button>
+        </div>
+
+        <div
+          id={dropdownId}
+          ref={dropdownRef}
+          style={{
+            position: "absolute",
+            top: "calc(100% + 22px)",
+            right: -16,
+            zIndex: 20,
+            minWidth: 220,
+            padding: "14px 16px",
+            borderRadius: 16,
+            border: "1px solid rgba(144, 151, 169, 0.25)",
+            background: "rgba(12, 16, 24, 0.94)",
+            color: "#F2F4F8",
+            boxShadow: "0 12px 36px rgba(0, 0, 0, 0.35)",
+            opacity: isOpen ? 1 : 0,
+            pointerEvents: isOpen ? "auto" : "none",
+            transform: isOpen ? "translateY(0)" : "translateY(-6px)",
+            transition: "opacity 150ms ease, transform 150ms ease",
+          }}
+        >
+          {panelContent}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
+      ref={wrapperRef}
       style={{
-        minWidth: compact ? 220 : undefined,
-        padding: compact ? "10px 12px" : "14px 16px",
+        minWidth: 220,
+        padding: "14px 16px",
         borderRadius: 16,
         border: "1px solid rgba(144, 151, 169, 0.25)",
         background: "rgba(12, 16, 24, 0.88)",
@@ -226,20 +310,11 @@ export default function AuthPanel({ compact = false }: AuthPanelProps) {
             {user ? user.email ?? "Signed in" : "Sign in to save your work"}
           </div>
         </div>
-        {compact && (
-          <button type="button" onClick={() => setIsOpen((current) => !current)} style={modeButtonStyle}>
-            {isOpen ? "Hide" : user ? "Manage" : "Open"}
-          </button>
-        )}
       </div>
 
-      {isOpen && (
-        <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-          {renderBody()}
-          {statusMessage && <div style={{ ...bodyTextStyle, color: "#8FD4A8" }}>{statusMessage}</div>}
-          {errorMessage && <div style={{ ...bodyTextStyle, color: "#F58C8C" }}>{errorMessage}</div>}
-        </div>
-      )}
+      <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+        {panelContent}
+      </div>
     </div>
   );
 }
@@ -299,4 +374,28 @@ const activeModeButtonStyle: CSSProperties = {
   ...modeButtonStyle,
   borderColor: "rgba(231, 185, 91, 0.75)",
   color: "#E7B95B",
+};
+
+const triggerButtonStyle: CSSProperties = {
+  ...baseButtonStyle,
+  padding: "8px 14px",
+  background: "#E7B95B",
+  color: "#171A22",
+  borderColor: "rgba(231, 185, 91, 0.75)",
+  boxShadow: "0 8px 18px rgba(0,0,0,0.2)",
+};
+
+const forgotPasswordStyle: CSSProperties = {
+  alignSelf: "flex-start",
+  marginTop: 6,
+  marginBottom: 0,
+  padding: 0,
+  background: "transparent",
+  border: "none",
+  color: "#E7B95B",
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: "0.04em",
+  lineHeight: 1.4,
+  cursor: "pointer",
 };

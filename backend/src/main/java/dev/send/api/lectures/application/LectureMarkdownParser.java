@@ -14,6 +14,7 @@ import javax.annotation.Nullable;
 import dev.send.api.lectures.application.LectureSupport.LectureValidationException;
 import dev.send.api.lectures.domain.LectureModels.LectureCategory;
 import dev.send.api.lectures.domain.LectureModels.LectureCheckpoint;
+import dev.send.api.lectures.domain.LectureModels.LectureCheckpointSimulationConfig;
 import dev.send.api.lectures.domain.LectureModels.LectureCheckpointRule;
 import dev.send.api.lectures.domain.LectureModels.LectureCheckpointTask;
 import dev.send.api.lectures.domain.LectureModels.LectureDefinition;
@@ -24,7 +25,6 @@ import dev.send.api.lectures.domain.LectureModels.LectureSandboxNode;
 import dev.send.api.lectures.domain.LectureModels.LectureSandboxPreset;
 import dev.send.api.lectures.domain.LectureModels.LectureSublecture;
 import dev.send.api.strategy.domain.NodePosition;
-
 @Component
 public class LectureMarkdownParser {
     private static final String LECTURE_MARKER = ":::lecture ";
@@ -132,7 +132,18 @@ public class LectureMarkdownParser {
                 toStringList(checkpointNode.path("instructions")),
                 toTasks(checkpointNode.path("tasks")),
                 toSandboxPreset(checkpointNode.path("sandboxPreset")),
+                toSimulationConfig(checkpointNode.path("simulationConfig")),
                 toValidationRules(checkpointNode.path("validation")));
+    }
+
+    private @Nullable LectureCheckpointSimulationConfig toSimulationConfig(JsonNode simulationConfigNode) {
+        if (simulationConfigNode == null || simulationConfigNode.isMissingNode() || simulationConfigNode.isNull()) {
+            return null;
+        }
+
+        return new LectureCheckpointSimulationConfig(
+                simulationConfigNode.path("initialCash").asDouble(),
+                !simulationConfigNode.has("includeTrace") || simulationConfigNode.path("includeTrace").asBoolean(true));
     }
 
     private LectureSandboxPreset toSandboxPreset(JsonNode sandboxPresetNode) {

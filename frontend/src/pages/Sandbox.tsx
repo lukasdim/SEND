@@ -1642,113 +1642,112 @@ function CalendarDateField({
                 pointerEvents: "auto",
               }}
             >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 8,
-              marginBottom: 10,
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setViewMonth((current) => startOfUtcMonth(addUtcMonths(current, -1)))}
-              style={smallGhostButtonStyle}
-            >
-              Prev
-            </button>
-            <div style={{ fontSize: 12, fontWeight: 700, color: UI_TEXT_PRIMARY }}>
-              {formatDisplayMonth(viewMonth)}
-            </div>
-            <button
-              type="button"
-              onClick={() => setViewMonth((current) => startOfUtcMonth(addUtcMonths(current, 1)))}
-              style={smallGhostButtonStyle}
-            >
-              Next
-            </button>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-              gap: 6,
-              marginBottom: 6,
-            }}
-          >
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
               <div
-                key={day}
                 style={{
-                  fontSize: 10,
-                  textAlign: "center",
-                  color: UI_TEXT_SECONDARY,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.04em",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  marginBottom: 10,
                 }}
               >
-                {day}
-              </div>
-            ))}
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-              gap: 6,
-            }}
-          >
-            {days.map((day) => {
-              const isoDate = formatIsoDate(day);
-              const isCurrentMonth = day.getUTCMonth() === viewMonth.getUTCMonth();
-              const isSelected = isoDate === value;
-              const isWeekend = isWeekendDate(day);
-              const isOutOfRange = day.getTime() < minTime || day.getTime() > maxTime;
-              const isDisabled = isWeekend || isOutOfRange;
-
-              return (
                 <button
-                  key={isoDate}
                   type="button"
-                  disabled={isDisabled}
-                  onClick={() => {
-                    onChange(isoDate);
-                    setIsOpen(false);
-                  }}
-                  title={`${formatShortWeekday(day)} ${formatDisplayDate(isoDate)}`}
-                  style={{
-                    height: 30,
-                    borderRadius: 8,
-                    border: `1px solid ${
-                      isSelected ? UI_ACCENT : isWeekend ? withAlpha(UI_BORDER_STRONG, 0.6) : UI_BORDER_SUBTLE
-                    }`,
-                    background: isSelected
-                      ? withAlpha(UI_ACCENT, 0.22)
-                      : isWeekend
-                        ? withAlpha(UI_TEXT_SECONDARY, 0.08)
-                        : UI_ELEVATED,
-                    color: !isCurrentMonth
-                      ? withAlpha(UI_TEXT_SECONDARY, 0.45)
-                      : isDisabled
-                        ? withAlpha(UI_TEXT_SECONDARY, 0.55)
-                        : UI_TEXT_PRIMARY,
-                    fontSize: 11,
-                    fontWeight: isSelected ? 700 : 500,
-                    cursor: isDisabled ? "not-allowed" : "pointer",
-                    opacity: isCurrentMonth ? 1 : 0.72,
-                  }}
+                  onClick={() => setViewMonth((current) => startOfUtcMonth(addUtcMonths(current, -1)))}
+                  style={smallGhostButtonStyle}
                 >
-                  {day.getUTCDate()}
+                  Prev
                 </button>
-              );
-            })}
-          </div>
-          <div style={{ marginTop: 8, fontSize: 11, color: UI_TEXT_SECONDARY }}>
-            Weekends are unavailable for simulations.
-          </div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: UI_TEXT_PRIMARY }}>
+                  {formatDisplayMonth(viewMonth)}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewMonth((current) => startOfUtcMonth(addUtcMonths(current, 1)))}
+                  style={smallGhostButtonStyle}
+                >
+                  Next
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+                  gap: 6,
+                  marginBottom: 6,
+                }}
+              >
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                  <div
+                    key={day}
+                    style={{
+                      fontSize: 10,
+                      textAlign: "center",
+                      color: UI_TEXT_SECONDARY,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    {day}
+                  </div>
+                ))}
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+                  gap: 6,
+                }}
+              >
+                {days.map((day) => {
+                  const isoDate = formatIsoDate(day);
+                  const isCurrentMonth = day.getUTCMonth() === viewMonth.getUTCMonth();
+                  const isSelected = isoDate === value;
+                  const isWeekend = isWeekendDate(day);
+                  const isOutOfRange = day.getTime() < minTime || day.getTime() > maxTime;
+                  const isDisabled = isWeekend || isOutOfRange;
+
+                  return (
+                    <button
+                      key={isoDate}
+                      type="button"
+                      disabled={isDisabled}
+                      onClick={() => {
+                        onChange(isoDate);
+                        setIsOpen(false);
+                      }}
+                      title={`${formatShortWeekday(day)} ${formatDisplayDate(isoDate)}`}
+                      style={{
+                        height: 30,
+                        borderRadius: 8,
+                        border: `1px solid ${isSelected ? UI_ACCENT : isWeekend ? withAlpha(UI_BORDER_STRONG, 0.6) : UI_BORDER_SUBTLE
+                          }`,
+                        background: isSelected
+                          ? withAlpha(UI_ACCENT, 0.22)
+                          : isWeekend
+                            ? withAlpha(UI_TEXT_SECONDARY, 0.08)
+                            : UI_ELEVATED,
+                        color: !isCurrentMonth
+                          ? withAlpha(UI_TEXT_SECONDARY, 0.45)
+                          : isDisabled
+                            ? withAlpha(UI_TEXT_SECONDARY, 0.55)
+                            : UI_TEXT_PRIMARY,
+                        fontSize: 11,
+                        fontWeight: isSelected ? 700 : 500,
+                        cursor: isDisabled ? "not-allowed" : "pointer",
+                        opacity: isCurrentMonth ? 1 : 0.72,
+                      }}
+                    >
+                      {day.getUTCDate()}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: 8, fontSize: 11, color: UI_TEXT_SECONDARY }}>
+                Weekends are unavailable for simulations.
+              </div>
             </div>
           </div>,
           document.body
@@ -1964,12 +1963,12 @@ function ReplayTimeline({
               tone: "neutral" as const,
             },
             {
-              label: "Realized",
+              label: "Realized P/L",
               value: formatSignedCurrency(activeDay.trace.balanceSnapshot.realizedPnl),
               tone: activeDay.trace.balanceSnapshot.realizedPnl >= 0 ? ("positive" as const) : ("negative" as const),
             },
             {
-              label: "Day P/L",
+              label: "Total P/L",
               value: formatSignedCurrency(activeDayPnl),
               tone: activeDayPnl >= 0 ? ("positive" as const) : ("negative" as const),
             },
@@ -2137,9 +2136,8 @@ function ReplayTimeline({
                 onFocus={() => onHoverDay(day.index)}
                 onBlur={onLeaveDay}
                 onClick={() => onSelectDay(day.index)}
-                title={`${formatDisplayDate(day.date)} � P/L ${formatSignedCurrency(day.dailyPnl)}${
-                  day.dotMarkers.length > 0 ? ` � ${day.dotMarkers.join("/")}` : ""
-                }`}
+                title={`${formatDisplayDate(day.date)} � P/L ${formatSignedCurrency(day.dailyPnl)}${day.dotMarkers.length > 0 ? ` � ${day.dotMarkers.join("/")}` : ""
+                  }`}
                 style={{
                   position: "relative",
                   width: buttonWidth,
@@ -2412,9 +2410,9 @@ function SandboxInner() {
           runtimeResult,
           runtimeResultMeta: runtimeResult
             ? {
-                label: changedToday ? "Updated today" : "Replay",
-                glow: changedToday,
-              }
+              label: changedToday ? "Updated today" : "Replay",
+              glow: changedToday,
+            }
             : undefined,
           errorState: replayIssue,
           readOnly: true,
@@ -2428,9 +2426,9 @@ function SandboxInner() {
     () =>
       simulationSession
         ? simulationSession.graphSnapshot.edges.map((edge) => ({
-            ...edge,
-            selected: false,
-          }))
+          ...edge,
+          selected: false,
+        }))
         : [],
     [simulationSession]
   );
@@ -2617,21 +2615,21 @@ function SandboxInner() {
     activeIssues.length > 0
       ? focusedIssue
         ? {
-            issueCount: activeIssues.length,
-            title: focusedIssue.title,
-            summary: focusedIssue.summary,
-            details: focusedIssue.details,
-            technicalDetails: focusedIssue.technicalDetails,
-            onDismiss: dismissIssues,
-          }
+          issueCount: activeIssues.length,
+          title: focusedIssue.title,
+          summary: focusedIssue.summary,
+          details: focusedIssue.details,
+          technicalDetails: focusedIssue.technicalDetails,
+          onDismiss: dismissIssues,
+        }
         : null
       : transientBanner
         ? {
-            title: transientBanner.title,
-            summary: transientBanner.summary,
-            details: transientBanner.details,
-            onDismiss: dismissTransientBanner,
-          }
+          title: transientBanner.title,
+          summary: transientBanner.summary,
+          details: transientBanner.details,
+          onDismiss: dismissTransientBanner,
+        }
         : null;
 
   const focusIssue = useCallback(
@@ -2860,10 +2858,10 @@ function SandboxInner() {
       const canvasBounds = canvasWrapperRef.current?.getBoundingClientRect();
       const overCanvas = Boolean(
         canvasBounds &&
-          clientX >= canvasBounds.left &&
-          clientX <= canvasBounds.right &&
-          clientY >= canvasBounds.top &&
-          clientY <= canvasBounds.bottom
+        clientX >= canvasBounds.left &&
+        clientX <= canvasBounds.right &&
+        clientY >= canvasBounds.top &&
+        clientY <= canvasBounds.bottom
       );
 
       return {
@@ -2874,9 +2872,9 @@ function SandboxInner() {
         overCanvas,
         flowPosition: overCanvas
           ? screenToFlowPosition({
-              x: clientX,
-              y: clientY,
-            })
+            x: clientX,
+            y: clientY,
+          })
           : null,
         canvasZoom: overCanvas ? getZoom() : 1,
       };
@@ -2968,15 +2966,15 @@ function SandboxInner() {
       const savedStrategy: StoredStrategy =
         currentStrategyId && currentStrategyKind === "user"
           ? await updateStoredStrategy(currentStrategyId, {
-              name: strategyName,
-              nodes: payloadGraph.nodes,
-              edges: payloadGraph.edges,
-            })
+            name: strategyName,
+            nodes: payloadGraph.nodes,
+            edges: payloadGraph.edges,
+          })
           : await createStoredStrategy({
-              name: strategyName,
-              nodes: payloadGraph.nodes,
-              edges: payloadGraph.edges,
-            });
+            name: strategyName,
+            nodes: payloadGraph.nodes,
+            edges: payloadGraph.edges,
+          });
 
       setCurrentStrategyId(savedStrategy.id);
       setCurrentStrategyName(savedStrategy.name);
@@ -3971,20 +3969,20 @@ function SandboxInner() {
                 flex: 1,
                 opacity:
                   isStrategyTesting ||
-                  isStrategyTestCoolingDown ||
-                  isSimulationBoundsLoading ||
-                  !hasSimulationPriceData ||
-                  nodes.length === 0 ||
-                  simulationValidationMessage
+                    isStrategyTestCoolingDown ||
+                    isSimulationBoundsLoading ||
+                    !hasSimulationPriceData ||
+                    nodes.length === 0 ||
+                    simulationValidationMessage
                     ? 0.7
                     : 1,
                 cursor:
                   isStrategyTesting ||
-                  isStrategyTestCoolingDown ||
-                  isSimulationBoundsLoading ||
-                  !hasSimulationPriceData ||
-                  nodes.length === 0 ||
-                  simulationValidationMessage
+                    isStrategyTestCoolingDown ||
+                    isSimulationBoundsLoading ||
+                    !hasSimulationPriceData ||
+                    nodes.length === 0 ||
+                    simulationValidationMessage
                     ? "not-allowed"
                     : "pointer",
               }}

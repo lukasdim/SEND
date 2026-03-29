@@ -12,6 +12,7 @@ import dev.send.api.worker.application.StrategySimulationConfig;
 @Service
 public class StrategySimulationBoundsService {
     private static final int MAX_SIMULATION_MONTHS = 6;
+    private static final int DEFAULT_LECTURE_SIMULATION_DAYS = 30;
 
     private final StockPriceJdbcRepository stockPriceJdbcRepository;
 
@@ -50,6 +51,28 @@ public class StrategySimulationBoundsService {
             throw new StrategyValidationException(
                     "Simulation dates must stay between " + earliestDate + " and " + latestDate + ".");
         }
+    }
+
+    public StrategySimulationConfig createLectureSimulationConfig(double initialCash, boolean includeTrace) {
+        StrategySimulationBounds bounds = getSimulationBounds();
+        if (!bounds.hasPriceData() || bounds.earliestPriceDate() == null || bounds.latestPriceDate() == null) {
+            throw new StrategyValidationException("Simulation is unavailable until stock price data is loaded.");
+        }
+
+        LocalDate earliestDate = parseIsoDate(bounds.earliestPriceDate(), "earliestPriceDate");
+        LocalDate latestDate = parseIsoDate(bounds.latestPriceDate(), "latestPriceDate");
+        LocalDate startDate = latestDate.minusDays(DEFAULT_LECTURE_SIMULATION_DAYS - 1L);
+        if (startDate.isBefore(earliestDate)) {
+            startDate = earliestDate;
+        }
+
+        StrategySimulationConfig simulationConfig = new StrategySimulationConfig(
+                startDate.toString(),
+                latestDate.toString(),
+                initialCash,
+                includeTrace);
+        validateSimulationRequest(simulationConfig);
+        return simulationConfig;
     }
 
     private LocalDate parseIsoDate(String rawDate, String fieldName) {

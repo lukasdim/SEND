@@ -575,6 +575,7 @@ function SandboxInner({
         source: edge.source,
         target: edge.target,
       })),
+      simulation: checkpoint.simulationConfig,
     });
   };
 

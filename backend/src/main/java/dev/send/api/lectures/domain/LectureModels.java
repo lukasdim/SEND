@@ -31,7 +31,12 @@ public final class LectureModels {
             List<String> instructions,
             List<LectureCheckpointTask> tasks,
             LectureSandboxPreset sandboxPreset,
+            @Nullable LectureCheckpointSimulationConfig simulationConfig,
             List<LectureCheckpointRule> validation) {}
+
+    public record LectureCheckpointSimulationConfig(
+            double initialCash,
+            boolean includeTrace) {}
 
     public record LectureCheckpointRule(
             String type,

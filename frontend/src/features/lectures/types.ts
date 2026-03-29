@@ -65,6 +65,10 @@ export type CheckpointDefinition = {
   instructions: string[];
   tasks: LectureCheckpointTask[];
   sandboxPreset: LectureSandboxPreset;
+  simulationConfig?: {
+    initialCash: number;
+    includeTrace?: boolean | null;
+  };
 };
 
 export type SublectureDefinition = {
@@ -113,6 +117,7 @@ export type LectureCatalogResponse = {
 export type LectureCheckpointSubmission = {
   nodes: LectureSandboxNode[];
   edges: LectureSandboxEdge[];
+  simulation?: CheckpointDefinition["simulationConfig"];
 };
 
 export type LectureCheckpointVerificationResult = {

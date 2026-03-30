@@ -8,7 +8,6 @@ import javax.annotation.Nullable;
 import dev.send.api.strategy.api.dto.GraphEdgeDto;
 import dev.send.api.strategy.api.dto.GraphNodeDto;
 import dev.send.api.strategy.api.dto.NodePositionDto;
-import dev.send.api.strategy.api.dto.StrategySimulationConfigDto;
 
 public final class LectureDtos {
     private LectureDtos() {}
@@ -54,7 +53,12 @@ public final class LectureDtos {
             String title,
             List<String> instructions,
             List<LectureCheckpointTaskDto> tasks,
-            LectureSandboxPresetDto sandboxPreset) {}
+            LectureSandboxPresetDto sandboxPreset,
+            @Nullable LectureSimulationConfigDto simulationConfig) {}
+
+    public record LectureSimulationConfigDto(
+            double initialCash,
+            @Nullable Boolean includeTrace) {}
 
     public record LectureCheckpointStateDto(
             @Nullable String lastFeedback,
@@ -69,7 +73,7 @@ public final class LectureDtos {
     public record LectureCheckpointVerifyRequestDto(
             List<GraphNodeDto> nodes,
             List<GraphEdgeDto> edges,
-            @Nullable StrategySimulationConfigDto simulation) {}
+            @Nullable LectureSimulationConfigDto simulation) {}
 
     public record LectureCheckpointVerifyResponseDto(
             boolean passed,

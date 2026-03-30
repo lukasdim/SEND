@@ -34,6 +34,7 @@ import dev.send.api.lectures.domain.LectureModels.LectureCheckpointSubmission;
 import dev.send.api.lectures.domain.LectureModels.LectureDefinition;
 import dev.send.api.strategy.api.ApiErrorDto;
 import dev.send.api.strategy.api.dto.StrategyDocumentDto;
+import dev.send.api.strategy.application.StrategySimulationBoundsService;
 import dev.send.api.strategy.application.StrategyDocumentMapper;
 import dev.send.api.worker.application.StrategySimulationConfig;
 
@@ -45,18 +46,21 @@ public class LectureController {
     private final LectureProgressService lectureProgressService;
     private final LectureCheckpointVerificationService lectureCheckpointVerificationService;
     private final StrategyDocumentMapper strategyDocumentMapper;
+    private final StrategySimulationBoundsService strategySimulationBoundsService;
 
     public LectureController(
             LectureService lectureService,
             LectureDtoMapper lectureDtoMapper,
             LectureProgressService lectureProgressService,
             LectureCheckpointVerificationService lectureCheckpointVerificationService,
-            StrategyDocumentMapper strategyDocumentMapper) {
+            StrategyDocumentMapper strategyDocumentMapper,
+            StrategySimulationBoundsService strategySimulationBoundsService) {
         this.lectureService = lectureService;
         this.lectureDtoMapper = lectureDtoMapper;
         this.lectureProgressService = lectureProgressService;
         this.lectureCheckpointVerificationService = lectureCheckpointVerificationService;
         this.strategyDocumentMapper = strategyDocumentMapper;
+        this.strategySimulationBoundsService = strategySimulationBoundsService;
     }
 
     @GetMapping
@@ -147,13 +151,11 @@ public class LectureController {
     }
 
     private @Nullable StrategySimulationConfig toSimulationConfig(
-            @Nullable dev.send.api.strategy.api.dto.StrategySimulationConfigDto simulationConfigDto) {
+            @Nullable dev.send.api.lectures.api.dto.LectureDtos.LectureSimulationConfigDto simulationConfigDto) {
         if (simulationConfigDto == null) {
             return null;
         }
-        return new StrategySimulationConfig(
-                simulationConfigDto.startDate(),
-                simulationConfigDto.endDate(),
+        return strategySimulationBoundsService.createLectureSimulationConfig(
                 simulationConfigDto.initialCash(),
                 simulationConfigDto.includeTrace() == null || simulationConfigDto.includeTrace());
     }

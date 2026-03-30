@@ -18,6 +18,7 @@ type PageShellProps = {
   eyebrow?: string;
   description?: string;
   children: React.ReactNode;
+  maxWidth?: number;
 };
 
 const navItems = [
@@ -26,7 +27,7 @@ const navItems = [
   { to: "/sandbox", label: "Sandbox" },
 ];
 
-export default function PageShell({ title, eyebrow, description, children }: PageShellProps) {
+export default function PageShell({ title, eyebrow, description, children, maxWidth = 1120 }: PageShellProps) {
   const location = useLocation();
 
   return (
@@ -39,7 +40,7 @@ export default function PageShell({ title, eyebrow, description, children }: Pag
     >
       <div
         style={{
-          maxWidth: 1120,
+          maxWidth,
           margin: "0 auto",
           padding: "24px 20px 64px",
           boxSizing: "border-box",

@@ -569,12 +569,16 @@ function SandboxInner({
         type: typeof node.type === "string" ? node.type : "unknown",
         label: node.data.displayName,
         position: node.position,
+        data: node.data.fieldValues,
       })),
       edges: edges.map((edge) => ({
         id: edge.id,
         source: edge.source,
         target: edge.target,
+        sourceHandle: edge.sourceHandle,
+        targetHandle: edge.targetHandle,
       })),
+      simulation: checkpoint.simulationConfig,
     });
   };
 

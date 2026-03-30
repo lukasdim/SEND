@@ -22,6 +22,7 @@ import dev.send.api.lectures.api.dto.LectureDtos.LectureProgressDto;
 import dev.send.api.lectures.api.dto.LectureDtos.LectureSandboxEdgeDto;
 import dev.send.api.lectures.api.dto.LectureDtos.LectureSandboxNodeDto;
 import dev.send.api.lectures.api.dto.LectureDtos.LectureSandboxPresetDto;
+import dev.send.api.lectures.api.dto.LectureDtos.LectureSimulationConfigDto;
 import dev.send.api.lectures.api.dto.LectureDtos.LectureSublectureDto;
 import dev.send.api.lectures.domain.LectureModels.LectureCheckpoint;
 import dev.send.api.lectures.domain.LectureModels.LectureDefinition;
@@ -30,7 +31,6 @@ import dev.send.api.lectures.domain.LectureModels.LecturePath;
 import dev.send.api.lectures.domain.LectureModels.LectureProgress;
 import dev.send.api.lectures.domain.LectureModels.LectureSublecture;
 import dev.send.api.strategy.api.dto.NodePositionDto;
-
 @Component
 public class LectureDtoMapper {
     private static final List<CatalogPathSeed> CATALOG_SEEDS = List.of(
@@ -211,7 +211,12 @@ public class LectureDtoMapper {
                                 .toList(),
                         checkpoint.sandboxPreset().starterEdges().stream()
                                 .map(edge -> new LectureSandboxEdgeDto(edge.id(), edge.source(), edge.target()))
-                                .toList()));
+                                .toList()),
+                checkpoint.simulationConfig() == null
+                        ? null
+                        : new LectureSimulationConfigDto(
+                                checkpoint.simulationConfig().initialCash(),
+                                checkpoint.simulationConfig().includeTrace()));
     }
 
     private record CatalogPathSeed(

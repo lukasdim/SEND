@@ -18,6 +18,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class StrategyExecutionService {
+  public static final double MAX_INITIAL_CASH = 1_000_000_000d;
+
   private final StrategyGraphValidator strategyGraphValidator;
   private final OcamlWorkerClient ocamlWorkerClient;
 
@@ -165,8 +167,15 @@ public class StrategyExecutionService {
     if (simulationConfig.endDate() == null || simulationConfig.endDate().isBlank()) {
       throw new StrategyValidationException("Simulation endDate is required.");
     }
+    if (!Double.isFinite(simulationConfig.initialCash())) {
+      throw new StrategyValidationException("Simulation initialCash must be a finite number.");
+    }
     if (simulationConfig.initialCash() < 0) {
       throw new StrategyValidationException("Simulation initialCash must be non-negative.");
+    }
+    if (simulationConfig.initialCash() > MAX_INITIAL_CASH) {
+      throw new StrategyValidationException(
+          "Simulation initialCash must be less than or equal to " + (long) MAX_INITIAL_CASH + ".");
     }
   }
 }

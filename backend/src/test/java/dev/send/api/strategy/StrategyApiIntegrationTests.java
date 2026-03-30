@@ -326,6 +326,38 @@ class StrategyApiIntegrationTests {
     }
 
     @Test
+    void rejectsSimulationsWithOversizedInitialCash() throws Exception {
+        mockMvc.perform(post("/api/strategies/simulate")
+                        .header("X-Forwarded-For", "198.51.100.250")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "strategy": {
+                                    "id": "draft",
+                                    "nodes": [
+                                      {
+                                        "id": "a",
+                                        "type": "const_bool",
+                                        "position": { "x": 0, "y": 0 },
+                                        "data": { "value": true }
+                                      }
+                                    ],
+                                    "edges": []
+                                  },
+                                  "simulation": {
+                                    "startDate": "2024-01-01",
+                                    "endDate": "2024-01-31",
+                                    "initialCash": 1000000001.0,
+                                    "includeTrace": true
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("strategy_validation_failed"))
+                .andExpect(jsonPath("$.message").value("Simulation initialCash must be less than or equal to 1000000000."));
+    }
+
+    @Test
     void ignoresSpoofedForwardedForHeadersFromUntrustedRemoteAddresses() throws Exception {
         ObjectNode result = objectMapper.createObjectNode();
         result.putObject("summary")

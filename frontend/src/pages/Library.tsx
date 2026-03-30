@@ -63,8 +63,9 @@ export default function Library() {
   return (
     <PageShell
       eyebrow="Learning Library"
-      title="Choose a path, then follow its categories."
-      description="Logic is shown first by default. Switch between Logic and Economics, then open a guided lecture from the categories inside that path."
+      title="Choose a path"
+      //description="Logic is shown first by default. Switch between Logic and Economics, then open a guided lecture from the categories inside that path."
+      maxWidth={1320}
     >
       {error && (
         <section
@@ -85,13 +86,13 @@ export default function Library() {
         <div
           style={{
             width: "100%",
-            padding: 8,
+            padding: 6,
             borderRadius: 999,
             border: `1px solid ${UI_BORDER_STRONG}`,
             background: UI_ELEVATED,
-            boxShadow: `0 18px 40px ${withAlpha("#000000", 0.18)}`,
+            boxShadow: `0 14px 30px ${withAlpha("#000000", 0.16)}`,
             display: "flex",
-            gap: 8,
+            gap: 6,
           }}
         >
           {(catalog?.paths ?? []).map((path) => {
@@ -103,15 +104,16 @@ export default function Library() {
                 onClick={() => handleSelectPath(path.slug)}
                 style={{
                   flex: 1,
-                  minHeight: 72,
+                  minHeight: 54,
                   borderRadius: 999,
                   border: `1px solid ${isActive ? UI_BORDER_STRONG : UI_BORDER_SUBTLE}`,
                   background: isActive ? `linear-gradient(135deg, ${withAlpha(UI_ACCENT, 0.3)}, ${withAlpha("#FAC775", 0.22)})` : UI_CARD,
                   color: UI_TEXT_PRIMARY,
-                  fontSize: 20,
+                  fontSize: 16,
                   fontWeight: 800,
                   letterSpacing: "0.04em",
                   cursor: "pointer",
+                  padding: "0 18px",
                 }}
               >
                 {path.title}
@@ -120,54 +122,15 @@ export default function Library() {
           })}
         </div>
 
-        {selectedPath && (
-          <section
-            style={{
-              padding: 22,
-              borderRadius: 28,
-              border: `1px solid ${UI_BORDER_SUBTLE}`,
-              background: UI_ELEVATED,
-              boxShadow: `0 16px 36px ${withAlpha("#000000", 0.18)}`,
-            }}
-          >
-            <div style={{ display: "grid", gap: 8 }}>
-              <div
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  border: `1px solid ${UI_BORDER_STRONG}`,
-                  color: UI_ACCENT,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  width: "fit-content",
-                }}
-              >
-                Active Path
-              </div>
-              <h2 style={{ margin: 0, fontSize: 34, color: UI_TEXT_PRIMARY }}>{selectedPath.title}</h2>
-              {selectedPath.description && (
-                <p style={{ margin: 0, color: UI_TEXT_SECONDARY, lineHeight: 1.7, maxWidth: 760 }}>
-                  {selectedPath.description}
-                </p>
-              )}
-            </div>
-          </section>
-        )}
-
         {selectedPath?.categories.map((category) => (
           <article
             key={category.slug}
             style={{
-              padding: 22,
-              borderRadius: 24,
+              padding: 18,
+              borderRadius: 22,
               border: `1px solid ${UI_BORDER_SUBTLE}`,
               background: UI_ELEVATED,
-              boxShadow: `0 16px 36px ${withAlpha("#000000", 0.18)}`,
+              boxShadow: `0 14px 28px ${withAlpha("#000000", 0.16)}`,
             }}
           >
             <div
@@ -186,21 +149,21 @@ export default function Library() {
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 8,
-                    padding: "6px 10px",
+                    padding: "5px 9px",
                     borderRadius: 999,
                     border: `1px solid ${UI_BORDER_STRONG}`,
                     color: UI_ACCENT,
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: 700,
                     letterSpacing: "0.08em",
                     textTransform: "uppercase",
-                    marginBottom: 14,
+                    marginBottom: 10,
                   }}
                 >
                   Category
                 </div>
-                <h2 style={{ margin: 0, fontSize: 28, color: UI_TEXT_PRIMARY }}>{category.title}</h2>
-                <p style={{ margin: "10px 0 0", color: UI_TEXT_SECONDARY, lineHeight: 1.7, maxWidth: 720 }}>
+                <h2 style={{ margin: 0, fontSize: 24, color: UI_TEXT_PRIMARY }}>{category.title}</h2>
+                <p style={{ margin: "8px 0 0", color: UI_TEXT_SECONDARY, lineHeight: 1.6, maxWidth: 720 }}>
                   {category.description}
                 </p>
               </div>
@@ -209,8 +172,8 @@ export default function Library() {
                 <div
                   style={{
                     maxWidth: 320,
-                    padding: "14px 16px",
-                    borderRadius: 18,
+                    padding: "12px 14px",
+                    borderRadius: 16,
                     border: `1px solid ${UI_BORDER_SUBTLE}`,
                     background: UI_CARD,
                     color: UI_TEXT_SECONDARY,
@@ -237,9 +200,9 @@ export default function Library() {
             ) : (
               <div
                 style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 18,
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                  gap: 12,
                 }}
               >
                 {category.lectures.map((lecture) => (
@@ -247,12 +210,9 @@ export default function Library() {
                     key={lecture.id}
                     to={`/library/${lecture.pathSlug}/${lecture.categorySlug}/${lecture.slug}`}
                     style={{
-                      flex: "1 1 240px",
-                      minWidth: 220,
-                      maxWidth: 280,
-                      aspectRatio: "3 / 4",
-                      padding: 20,
-                      borderRadius: 22,
+                      minHeight: 164,
+                      padding: 12,
+                      borderRadius: 14,
                       border: `1px solid ${UI_BORDER_SUBTLE}`,
                       background: `linear-gradient(180deg, ${UI_CARD}, ${withAlpha(UI_ELEVATED, 0.96)})`,
                       color: UI_TEXT_PRIMARY,
@@ -260,13 +220,13 @@ export default function Library() {
                       display: "flex",
                       flexDirection: "column",
                       justifyContent: "space-between",
-                      boxShadow: `0 14px 30px ${withAlpha("#000000", 0.16)}`,
+                      boxShadow: `0 10px 22px ${withAlpha("#000000", 0.14)}`,
                     }}
                   >
                     <div>
                       <div
                         style={{
-                          fontSize: 11,
+                          fontSize: 9,
                           fontWeight: 700,
                           letterSpacing: "0.08em",
                           textTransform: "uppercase",
@@ -275,10 +235,12 @@ export default function Library() {
                       >
                         {lecture.estimatedMinutes} min lecture
                       </div>
-                      <h3 style={{ margin: "12px 0 0", fontSize: 24, lineHeight: 1.05 }}>{lecture.title}</h3>
+                      <h3 style={{ margin: "7px 0 0", fontSize: 16, lineHeight: 1.18 }}>{lecture.title}</h3>
                     </div>
 
-                    <p style={{ margin: 0, color: UI_TEXT_SECONDARY, lineHeight: 1.7 }}>{lecture.summary}</p>
+                    <p style={{ margin: 0, color: UI_TEXT_SECONDARY, lineHeight: 1.4, fontSize: 12 }}>
+                      {lecture.summary}
+                    </p>
                   </Link>
                 ))}
               </div>

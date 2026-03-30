@@ -31,6 +31,7 @@ export default function Landing() {
       eyebrow="Landing Page"
       title="Build and learn trading logic in one place."
       description="SEND combines a node-based sandbox with a future learning path for financial concepts. The editor is already live, and the learning experience is scaffolded here as a polished placeholder for deeper implementation later."
+      maxWidth={1320}
     >
       <section
         style={{

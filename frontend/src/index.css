@@ -34,7 +34,8 @@ body {
   min-width: 320px;
   min-height: 100vh;
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
   background: #111118;
 }
 

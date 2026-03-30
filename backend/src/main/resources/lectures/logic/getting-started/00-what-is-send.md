@@ -10,8 +10,6 @@ It is a system that lets you build economic algorithms using simple building blo
 
 Each node does one small job. When you connect multiple nodes, they form a full strategy that the system can run.
 
----
-
 :::sublecture { "id":"what-you-are-building", "title":"What You Are Building" }
 
 # What You Are Building
@@ -31,8 +29,6 @@ For example:
 - Decide whether to buy  
 
 You are taking an idea and turning it into something the system can actually execute.
-
----
 
 :::sublecture { "id":"how-send-works", "title":"How SEND Works" }
 
@@ -57,8 +53,6 @@ Different nodes have different roles:
 
 When combined, they create a full decision system.
 
----
-
 :::sublecture { "id":"why-send-exists", "title":"Why SEND Exists" }
 
 # Why SEND Exists
@@ -72,8 +66,6 @@ SEND is built so you can:
 - Learn by actually creating systems  
 
 You are not just learning concepts. You are building real strategies, testing them, and improving them step-by-step.
-
----
 
 ## What to remember
 

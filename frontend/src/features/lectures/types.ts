@@ -12,6 +12,7 @@ export type LectureCategory = {
 };
 
 export type LectureSandboxNodeType = string;
+export type LectureNodeFieldValue = string | number | boolean | null;
 
 export type LectureSandboxNode = {
   id: string;
@@ -21,12 +22,15 @@ export type LectureSandboxNode = {
     x: number;
     y: number;
   };
+  data?: Record<string, LectureNodeFieldValue>;
 };
 
 export type LectureSandboxEdge = {
   id: string;
   source: string;
   target: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
 };
 
 export type LectureCheckpointTask = {

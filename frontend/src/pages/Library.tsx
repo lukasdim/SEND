@@ -63,8 +63,8 @@ export default function Library() {
   return (
     <PageShell
       eyebrow="Learning Library"
-      title="Choose a path, then follow its categories."
-      description="Logic is shown first by default. Switch between Logic and Economics, then open a guided lecture from the categories inside that path."
+      title="Choose a path"
+      //description="Logic is shown first by default. Switch between Logic and Economics, then open a guided lecture from the categories inside that path."
       maxWidth={1320}
     >
       {error && (

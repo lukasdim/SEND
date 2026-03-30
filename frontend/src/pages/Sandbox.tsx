@@ -20,6 +20,7 @@ import AuthPanel from "../components/auth/AuthPanel";
 import {
   createEmptyNodeRegistry,
   createNodeRegistry,
+  isFieldVisible,
   isMathNodeType,
   type NodeIssueSeverity,
   type JsonScalar,
@@ -1103,9 +1104,12 @@ function buildReplayNodeIssueMap(traceDay: StrategySimulationTraceDay): Map<stri
 function estimateReplayNodeHeight(node: Node<NodeData>): number {
   const nodeData = node.data as NodeData;
   let height = 92;
+  const visibleFieldCount = (nodeData.dataFields ?? []).filter((field) =>
+    isFieldVisible(nodeData.nodeType, field, nodeData.fieldValues ?? {})
+  ).length;
 
-  if ((nodeData.dataFields?.length ?? 0) > 0) {
-    height += nodeData.dataFields.length * 50;
+  if (visibleFieldCount > 0) {
+    height += visibleFieldCount * 50;
   }
 
   if (isMathNodeType(nodeData.nodeType) && (nodeData.inputs?.length ?? 0) > 0) {
@@ -1206,7 +1210,10 @@ function NodeTemplatePreview({
     category: "node",
     borderWidth: 1.5,
   };
-  const hasBody = previewData.dataFields.length > 0;
+  const visiblePreviewFields = previewData.dataFields.filter((field) =>
+    isFieldVisible(previewData.nodeType, field, previewData.fieldValues)
+  );
+  const hasBody = visiblePreviewFields.length > 0;
 
   return (
     <div
@@ -1244,7 +1251,7 @@ function NodeTemplatePreview({
       </div>
       {hasBody && (
         <div style={{ padding: "0 10px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
-          {previewData.dataFields.map((field) => {
+          {visiblePreviewFields.map((field) => {
             const value = previewData.fieldValues[field.name];
             const isCheckbox = field.valueType === "BoolVal";
 
@@ -3473,22 +3480,36 @@ function SandboxInner() {
 
       <div
         style={{
-          width: 340,
-          padding: 12,
+          width: 312,
+          padding: 10,
           borderLeft: `1px solid ${UI_BORDER_SUBTLE}`,
           fontFamily: "system-ui, sans-serif",
           boxSizing: "border-box",
-          overflowY: "auto",
           display: "flex",
           flexDirection: "column",
           height: "100%",
           minHeight: 0,
           flexShrink: 0,
           background: UI_PANEL,
+          overflow: "hidden",
         }}
       >
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ flexShrink: 0, marginBottom: 10 }}>
           <AuthPanel compact />
+        </div>
+
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            overflowY: "auto",
+            overflowX: "hidden",
+            paddingRight: 2,
+          }}
+        >
 
           <div style={sidebarCardStyle}>
             <div style={sidebarSectionTitleStyle}>{isReplayMode ? "Replay" : "Strategy"}</div>

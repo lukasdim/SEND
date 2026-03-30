@@ -319,6 +319,12 @@ function isNodeIoCatalog(payload: unknown): payload is NodeIoCatalog {
                 group.readableOptions.length === group.options.length
               );
             }));
+        const visibleWhenValid =
+          field.visibleWhen == null ||
+          (isRecord(field.visibleWhen) &&
+            typeof field.visibleWhen.field === "string" &&
+            Array.isArray(field.visibleWhen.values) &&
+            field.visibleWhen.values.every((value) => typeof value === "string"));
         return (
           typeof field.name === "string" &&
           (field.label == null || typeof field.label === "string") &&
@@ -328,7 +334,8 @@ function isNodeIoCatalog(payload: unknown): payload is NodeIoCatalog {
           (defaultValue === undefined || isJsonScalar(defaultValue)) &&
           optionsValid &&
           readableOptionsValid &&
-          optionFilterValid
+          optionFilterValid &&
+          visibleWhenValid
         );
       })
     );

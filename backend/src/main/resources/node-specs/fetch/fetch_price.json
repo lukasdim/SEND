@@ -50,7 +50,7 @@
       "name": "dateBindingMode",
       "valueType": "StrVal",
       "required": true,
-      "defaultValue": "explicit_date",
+      "defaultValue": "simulation_day",
       "options": [
         "simulation_day",
         "simulation_day_offset",
@@ -66,13 +66,21 @@
       "name": "dayOffset",
       "valueType": "NumVal",
       "required": false,
-      "defaultValue": 0
+      "defaultValue": 0,
+      "visibleWhen": {
+        "field": "dateBindingMode",
+        "values": ["simulation_day_offset"]
+      }
     },
     {
       "name": "date",
       "valueType": "StrVal",
       "required": true,
-      "defaultValue": "2020-04-27"
+      "defaultValue": "2020-04-27",
+      "visibleWhen": {
+        "field": "dateBindingMode",
+        "values": ["explicit_date"]
+      }
     }
   ],
   "executorKey": "fetch_price"

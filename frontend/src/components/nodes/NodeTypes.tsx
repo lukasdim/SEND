@@ -59,6 +59,7 @@ export type NodeIoDataField = {
   options?: string[];
   readableOptions?: string[];
   optionFilter?: NodeIoDataFieldOptionFilter;
+  visibleWhen?: NodeIoDataFieldVisibilityRule;
 };
 
 export type NodeIoDataFieldOptionFilter = {
@@ -69,6 +70,11 @@ export type NodeIoDataFieldOptionFilter = {
 export type NodeIoDataFieldOptionGroup = {
   options: string[];
   readableOptions?: string[];
+};
+
+export type NodeIoDataFieldVisibilityRule = {
+  field: string;
+  values: string[];
 };
 
 export type NodeData = {
@@ -112,6 +118,12 @@ export type NodeRegistry = {
   getDefaultNodeData: (type: string) => NodeData | undefined;
   getNodeVisual: (type: string) => NodeVisual | undefined;
 };
+
+const FETCH_NODE_TYPES_WITH_SIMULATION_DAY_DEFAULT = new Set([
+  "fetch_price",
+  "fetch_financial_statements",
+  "fetch_fundamentals",
+]);
 
 const CATEGORY_THEMES = {
   market: { bg: "#0F1A14", border: "#1D9E75", title: "#5DCAA5", sub: "#1D9E75", category: "market data", borderWidth: 1.5 },
@@ -218,6 +230,71 @@ function getFirstSelectableValue(
   }
 
   return selectableOptions.options[0] ?? null;
+}
+
+function getEffectiveVisibleWhen(
+  nodeType: string,
+  field: NodeIoDataField
+): NodeIoDataFieldVisibilityRule | undefined {
+  if (field.visibleWhen) {
+    return field.visibleWhen;
+  }
+
+  if ((nodeType === "buy" || nodeType === "sell") && field.name === "shareQuantity") {
+    return { field: "sizeMode", values: ["shares"] };
+  }
+
+  if ((nodeType === "buy" || nodeType === "sell") && field.name === "dollarAmount") {
+    return { field: "sizeMode", values: ["dollars"] };
+  }
+
+  if (
+    FETCH_NODE_TYPES_WITH_SIMULATION_DAY_DEFAULT.has(nodeType) &&
+    field.name === "dayOffset"
+  ) {
+    return { field: "dateBindingMode", values: ["simulation_day_offset"] };
+  }
+
+  if (nodeType === "fetch_price" && field.name === "date") {
+    return { field: "dateBindingMode", values: ["explicit_date"] };
+  }
+
+  if (
+    (nodeType === "fetch_financial_statements" || nodeType === "fetch_fundamentals") &&
+    field.name === "reportDate"
+  ) {
+    return { field: "dateBindingMode", values: ["explicit_date"] };
+  }
+
+  return undefined;
+}
+
+export function isFieldVisible(
+  nodeType: string,
+  field: NodeIoDataField,
+  fieldValues: Record<string, JsonScalar>
+): boolean {
+  const visibleWhen = getEffectiveVisibleWhen(nodeType, field);
+  if (!visibleWhen) {
+    return true;
+  }
+
+  const controllingValue = fieldValues[visibleWhen.field];
+  return typeof controllingValue === "string" && visibleWhen.values.includes(controllingValue);
+}
+
+function applyFieldValueDefaults(
+  nodeType: string,
+  fieldValues: Record<string, JsonScalar>
+): Record<string, JsonScalar> {
+  if (!FETCH_NODE_TYPES_WITH_SIMULATION_DAY_DEFAULT.has(nodeType)) {
+    return fieldValues;
+  }
+
+  return {
+    ...fieldValues,
+    dateBindingMode: "simulation_day",
+  };
 }
 
 function getHandleTop(index: number, total: number): string {
@@ -346,6 +423,14 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
 
     return hasChanges ? nextFieldValues : null;
   }, [dataFields, fieldValues]);
+
+  const visibleDataFields = useMemo(
+    () =>
+      dataFields.filter((field) =>
+        isFieldVisible(data.nodeType, field, normalizedFieldValues ?? fieldValues)
+      ),
+    [data.nodeType, dataFields, fieldValues, normalizedFieldValues]
+  );
 
   useEffect(() => {
     if (!normalizedFieldValues) {
@@ -490,7 +575,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
             </div>
           )}
 
-          {dataFields.length > 0 && (
+          {visibleDataFields.length > 0 && (
             <div
               style={{
                 padding: "0 10px 10px",
@@ -500,7 +585,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
                 background: visual.background,
               }}
             >
-              {dataFields.map((field) => {
+              {visibleDataFields.map((field) => {
                 const inputType = toInputType(field.valueType);
                 const effectiveFieldValues = normalizedFieldValues ?? fieldValues;
                 const value = effectiveFieldValues[field.name] ?? toInitialFieldValue(field);
@@ -862,9 +947,12 @@ export function createNodeRegistry(catalog: NodeIoCatalog): NodeRegistry {
   const reactFlowTypes: NodeTypes = {};
 
   for (const node of catalog.nodes) {
-    const fieldValues = Object.fromEntries(
-      node.dataFields.map((field) => [field.name, toInitialFieldValue(field)])
-    ) as Record<string, JsonScalar>;
+      const fieldValues = applyFieldValueDefaults(
+      node.nodeType,
+      Object.fromEntries(
+        node.dataFields.map((field) => [field.name, toInitialFieldValue(field)])
+      ) as Record<string, JsonScalar>
+    );
 
     nodeDataByType[node.nodeType] = {
       nodeType: node.nodeType,
@@ -899,7 +987,12 @@ export function createNodeRegistry(catalog: NodeIoCatalog): NodeRegistry {
       ...data,
       inputs: [...data.inputs],
       outputs: [...data.outputs],
-      dataFields: data.dataFields.map((field) => ({ ...field })),
+            dataFields: data.dataFields.map((field) => ({
+              ...field,
+              visibleWhen: field.visibleWhen
+                ? { ...field.visibleWhen, values: [...field.visibleWhen.values] }
+                : undefined,
+            })),
       fieldValues: { ...data.fieldValues },
       errorState: data.errorState ? { ...data.errorState, details: data.errorState.details ? [...data.errorState.details] : undefined } : undefined,
       };

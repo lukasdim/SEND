@@ -18,6 +18,7 @@ import "reactflow/dist/style.css";
 import {
   createEmptyNodeRegistry,
   createNodeRegistry,
+  isFieldVisible,
   type NodeData,
   type NodeIoCatalog,
   type NodePaletteItem,
@@ -84,6 +85,40 @@ const FALLBACK_NODE_CATALOG: NodeIoCatalog = {
           options: ["open", "high", "low", "close", "adj_close"],
           readableOptions: ["Open", "High", "Low", "Close", "Adjusted Close"],
         },
+        {
+          name: "dateBindingMode",
+          label: "date binding mode",
+          valueType: "StrVal",
+          valueTypeClass: "string",
+          required: true,
+          defaultValue: "simulation_day",
+          options: ["simulation_day", "simulation_day_offset", "explicit_date"],
+          readableOptions: ["Simulation Day", "Simulation Day Offset", "Set Date"],
+        },
+        {
+          name: "dayOffset",
+          label: "day offset",
+          valueType: "NumVal",
+          valueTypeClass: "number",
+          required: false,
+          defaultValue: 0,
+          visibleWhen: {
+            field: "dateBindingMode",
+            values: ["simulation_day_offset"],
+          },
+        },
+        {
+          name: "date",
+          label: "date",
+          valueType: "StrVal",
+          valueTypeClass: "string",
+          required: true,
+          defaultValue: "2020-04-27",
+          visibleWhen: {
+            field: "dateBindingMode",
+            values: ["explicit_date"],
+          },
+        },
       ],
     },
     {
@@ -133,6 +168,40 @@ const FALLBACK_NODE_CATALOG: NodeIoCatalog = {
           options: ["shares", "dollars"],
           readableOptions: ["Shares", "Dollars"],
         },
+        {
+          name: "shareQuantity",
+          label: "share quantity",
+          valueType: "NumVal",
+          valueTypeClass: "number",
+          required: false,
+          defaultValue: 1,
+          visibleWhen: {
+            field: "sizeMode",
+            values: ["shares"],
+          },
+        },
+        {
+          name: "dollarAmount",
+          label: "dollar amount",
+          valueType: "NumVal",
+          valueTypeClass: "number",
+          required: false,
+          defaultValue: 1000,
+          visibleWhen: {
+            field: "sizeMode",
+            values: ["dollars"],
+          },
+        },
+        {
+          name: "priceField",
+          label: "price field",
+          valueType: "StrVal",
+          valueTypeClass: "string",
+          required: true,
+          defaultValue: "close",
+          options: ["open", "close", "adj_close"],
+          readableOptions: ["Open", "Close", "Adjusted Close"],
+        },
       ],
     },
     {
@@ -153,6 +222,50 @@ const FALLBACK_NODE_CATALOG: NodeIoCatalog = {
           valueTypeClass: "string",
           required: true,
           defaultValue: "AAPL",
+        },
+        {
+          name: "sizeMode",
+          label: "size mode",
+          valueType: "StrVal",
+          valueTypeClass: "string",
+          required: true,
+          defaultValue: "shares",
+          options: ["shares", "dollars"],
+          readableOptions: ["Shares", "Dollars"],
+        },
+        {
+          name: "shareQuantity",
+          label: "share quantity",
+          valueType: "NumVal",
+          valueTypeClass: "number",
+          required: false,
+          defaultValue: 1,
+          visibleWhen: {
+            field: "sizeMode",
+            values: ["shares"],
+          },
+        },
+        {
+          name: "dollarAmount",
+          label: "dollar amount",
+          valueType: "NumVal",
+          valueTypeClass: "number",
+          required: false,
+          defaultValue: 1000,
+          visibleWhen: {
+            field: "sizeMode",
+            values: ["dollars"],
+          },
+        },
+        {
+          name: "priceField",
+          label: "price field",
+          valueType: "StrVal",
+          valueTypeClass: "string",
+          required: true,
+          defaultValue: "close",
+          options: ["open", "close", "adj_close"],
+          readableOptions: ["Open", "Close", "Adjusted Close"],
         },
       ],
     },
@@ -229,7 +342,10 @@ function NodeTemplatePreview({
     category: "node",
     borderWidth: 1.5,
   };
-  const hasBody = previewData.dataFields.length > 0;
+  const visiblePreviewFields = previewData.dataFields.filter((field) =>
+    isFieldVisible(previewData.nodeType, field, previewData.fieldValues)
+  );
+  const hasBody = visiblePreviewFields.length > 0;
 
   return (
     <div
@@ -267,7 +383,7 @@ function NodeTemplatePreview({
       </div>
       {hasBody && (
         <div style={{ padding: "0 10px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
-          {previewData.dataFields.slice(0, 2).map((field) => (
+          {visiblePreviewFields.slice(0, 2).map((field) => (
             <div key={field.name} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <span
                 style={{

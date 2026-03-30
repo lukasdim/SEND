@@ -69,13 +69,21 @@
       "name": "shareQuantity",
       "valueType": "NumVal",
       "required": false,
-      "defaultValue": 1
+      "defaultValue": 1,
+      "visibleWhen": {
+        "field": "sizeMode",
+        "values": ["shares"]
+      }
     },
     {
       "name": "dollarAmount",
       "valueType": "NumVal",
       "required": false,
-      "defaultValue": 1000
+      "defaultValue": 1000,
+      "visibleWhen": {
+        "field": "sizeMode",
+        "values": ["dollars"]
+      }
     },
     {
       "name": "priceField",

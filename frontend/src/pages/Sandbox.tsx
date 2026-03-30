@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation } from "react-router-dom";
 import ReactFlow, {
@@ -1778,33 +1778,259 @@ function CalendarDateField({
   );
 }
 
-function ReplayTimeline({
-  session,
+function ReplayHeader({
+  activeDay,
   mode,
-  activeDayIndex,
-  hoveredDayIndex,
-  selectedDayIndex,
-  highlight,
+  collapsed,
+  onToggleCollapse,
   onEnterReplay,
   onExitReplay,
+}: {
+  activeDay: ReplayDayModel;
+  mode: ReplayMode;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  onEnterReplay: () => void;
+  onExitReplay: () => void;
+}) {
+  const collapseLabel = collapsed ? "Expand replay details" : "Collapse replay details";
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        marginBottom: collapsed ? 8 : 10,
+      }}
+    >
+      <button
+        type="button"
+        onClick={onToggleCollapse}
+        aria-label={collapseLabel}
+        title={collapseLabel}
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: -6,
+          transform: "translateX(-50%)",
+          height: 20,
+          minWidth: 26,
+          borderRadius: 999,
+          border: `1px solid ${UI_BORDER_SUBTLE}`,
+          background: UI_CARD,
+          color: UI_TEXT_PRIMARY,
+          fontSize: 11,
+          fontWeight: 700,
+          lineHeight: 1,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          boxShadow: `0 6px 14px ${withAlpha(UI_CANVAS, 0.25)}`,
+        }}
+      >
+        {collapsed ? "\u25B2" : "\u25BC"}
+      </button>
+      <div style={{ minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: UI_TEXT_SECONDARY,
+            marginBottom: 2,
+          }}
+        >
+          Replay
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: UI_TEXT_PRIMARY }}>
+          {formatDisplayDate(activeDay.date)} {"\u2022"} {activeDay.changedNodeCount} nodes changed
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={mode === "replay" ? onExitReplay : onEnterReplay}
+        style={{
+          ...toolbarButtonStyle,
+          width: "auto",
+          cursor: "pointer",
+          borderColor: mode === "replay" ? UI_ACCENT : UI_BORDER_SUBTLE,
+          background: mode === "replay" ? withAlpha(UI_ACCENT, 0.16) : UI_CARD,
+        }}
+      >
+        {mode === "replay" ? "Back to edit" : "Open Replay View"}
+      </button>
+    </div>
+  );
+}
+
+function ReplayDetails({ activeDay }: { activeDay: ReplayDayModel }) {
+  const activeDayPnl = activeDay.dailyPnl;
+
+  return (
+    <div
+      style={{
+        marginBottom: 12,
+        padding: 12,
+        borderRadius: 12,
+        border: `1px solid ${UI_BORDER_SUBTLE}`,
+        background: UI_CARD,
+        boxShadow: `0 6px 18px ${withAlpha(UI_CANVAS, 0.35)}`,
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+      }}
+    >
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        {[
+          {
+            label: "Equity",
+            value: formatCurrency(activeDay.trace.balanceSnapshot.equity),
+            tone: "neutral" as const,
+          },
+          {
+            label: "Cash",
+            value: formatCurrency(activeDay.trace.balanceSnapshot.cash),
+            tone: "neutral" as const,
+          },
+          {
+            label: "Realized P/L",
+            value: formatSignedCurrency(activeDay.trace.balanceSnapshot.realizedPnl),
+            tone: activeDay.trace.balanceSnapshot.realizedPnl >= 0 ? ("positive" as const) : ("negative" as const),
+          },
+          {
+            label: "Total P/L",
+            value: formatSignedCurrency(activeDayPnl),
+            tone: activeDayPnl >= 0 ? ("positive" as const) : ("negative" as const),
+          },
+        ].map((card) => (
+          <div
+            key={card.label}
+            style={{
+              minWidth: 140,
+              flex: "1 1 140px",
+              padding: "10px 12px",
+              borderRadius: 10,
+              background: UI_PANEL,
+              border: `1px solid ${withAlpha(UI_BORDER_STRONG, 0.6)}`,
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: UI_TEXT_SECONDARY }}>
+              {card.label.toUpperCase()}
+            </div>
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 16,
+                fontWeight: 700,
+                color: card.tone === "positive" ? "#6FD58A" : card.tone === "negative" ? "#F07A7A" : UI_TEXT_PRIMARY,
+              }}
+            >
+              {card.value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          borderRadius: 10,
+          border: `1px solid ${withAlpha(UI_BORDER_STRONG, 0.7)}`,
+          background: UI_PANEL,
+          padding: 10,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: UI_TEXT_SECONDARY }}>
+            Event Log
+          </div>
+          <div
+            style={{
+              padding: "2px 8px",
+              borderRadius: 999,
+              border: `1px solid ${UI_BORDER_SUBTLE}`,
+              fontSize: 10,
+              color: UI_TEXT_SECONDARY,
+            }}
+          >
+            {activeDay.previewLines.length} {activeDay.previewLines.length === 1 ? "event" : "events"}
+          </div>
+        </div>
+        {activeDay.previewLines.length > 0 ? (
+          activeDay.previewLines.map((entry) => (
+            <div
+              key={`${activeDay.date}-${entry.id}`}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                fontSize: 12,
+                color: UI_TEXT_PRIMARY,
+              }}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 999,
+                  background: entry.iconColor,
+                  flexShrink: 0,
+                }}
+              />
+              <div style={{ flex: 1, display: "flex", justifyContent: "space-between", gap: 12, minWidth: 0 }}>
+                <span style={{ color: UI_TEXT_SECONDARY, fontWeight: 700, letterSpacing: "0.03em" }}>
+                  {entry.label}
+                </span>
+                <span
+                  style={{
+                    color:
+                      entry.tone === "positive"
+                        ? "#6FD58A"
+                        : entry.tone === "negative"
+                          ? "#F07A7A"
+                          : entry.tone === "warning"
+                            ? "#E8A33B"
+                            : UI_TEXT_PRIMARY,
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {entry.value}
+                </span>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div style={{ fontSize: 12, color: UI_TEXT_SECONDARY }}>No events for this day.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReplayDots({
+  session,
+  hoveredDayIndex,
+  selectedDayIndex,
   onHoverDay,
   onLeaveDay,
   onSelectDay,
 }: {
   session: ReplaySession;
-  mode: ReplayMode;
-  activeDayIndex: number;
   hoveredDayIndex: number | null;
   selectedDayIndex: number;
-  highlight: boolean;
-  onEnterReplay: () => void;
-  onExitReplay: () => void;
   onHoverDay: (index: number) => void;
   onLeaveDay: () => void;
   onSelectDay: (index: number) => void;
 }) {
-  const activeDay = session.replayDays[activeDayIndex];
-  const activeDayPnl = activeDay.dailyPnl;
   const timelineScrollRef = useRef<HTMLDivElement | null>(null);
   const [scrollMetrics, setScrollMetrics] = useState({ left: 0, viewportWidth: 0, scrollWidth: 0 });
 
@@ -1907,199 +2133,7 @@ function ReplayTimeline({
   );
 
   return (
-    <div
-      style={{
-        position: "relative",
-        padding: "12px 16px 14px",
-        borderTop: `1px solid ${UI_BORDER_SUBTLE}`,
-        background: UI_PANEL,
-        boxShadow: highlight ? `0 -2px 18px ${withAlpha(UI_ACCENT, 0.36)}` : "none",
-        transition: "box-shadow 180ms ease",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          marginBottom: 10,
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: UI_TEXT_SECONDARY,
-              marginBottom: 2,
-            }}
-          >
-            Replay
-          </div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: UI_TEXT_PRIMARY }}>
-            {formatDisplayDate(activeDay.date)} • {activeDay.changedNodeCount} nodes changed
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={mode === "replay" ? onExitReplay : onEnterReplay}
-          style={{
-            ...toolbarButtonStyle,
-            width: "auto",
-            cursor: "pointer",
-            borderColor: mode === "replay" ? UI_ACCENT : UI_BORDER_SUBTLE,
-            background: mode === "replay" ? withAlpha(UI_ACCENT, 0.16) : UI_CARD,
-          }}
-        >
-          {mode === "replay" ? "Back to edit" : "Open Replay View"}
-        </button>
-      </div>
-
-      <div
-        style={{
-          marginBottom: 12,
-          padding: 12,
-          borderRadius: 12,
-          border: `1px solid ${UI_BORDER_SUBTLE}`,
-          background: UI_CARD,
-          boxShadow: `0 6px 18px ${withAlpha(UI_CANVAS, 0.35)}`,
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-        }}
-      >
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {[
-            {
-              label: "Equity",
-              value: formatCurrency(activeDay.trace.balanceSnapshot.equity),
-              tone: "neutral" as const,
-            },
-            {
-              label: "Cash",
-              value: formatCurrency(activeDay.trace.balanceSnapshot.cash),
-              tone: "neutral" as const,
-            },
-            {
-              label: "Realized P/L",
-              value: formatSignedCurrency(activeDay.trace.balanceSnapshot.realizedPnl),
-              tone: activeDay.trace.balanceSnapshot.realizedPnl >= 0 ? ("positive" as const) : ("negative" as const),
-            },
-            {
-              label: "Total P/L",
-              value: formatSignedCurrency(activeDayPnl),
-              tone: activeDayPnl >= 0 ? ("positive" as const) : ("negative" as const),
-            },
-          ].map((card) => (
-            <div
-              key={card.label}
-              style={{
-                minWidth: 140,
-                flex: "1 1 140px",
-                padding: "10px 12px",
-                borderRadius: 10,
-                background: UI_PANEL,
-                border: `1px solid ${withAlpha(UI_BORDER_STRONG, 0.6)}`,
-              }}
-            >
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: UI_TEXT_SECONDARY }}>
-                {card.label.toUpperCase()}
-              </div>
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 16,
-                  fontWeight: 700,
-                  color: card.tone === "positive" ? "#6FD58A" : card.tone === "negative" ? "#F07A7A" : UI_TEXT_PRIMARY,
-                }}
-              >
-                {card.value}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div
-          style={{
-            borderRadius: 10,
-            border: `1px solid ${withAlpha(UI_BORDER_STRONG, 0.7)}`,
-            background: UI_PANEL,
-            padding: 10,
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: UI_TEXT_SECONDARY }}>
-              Event Log
-            </div>
-            <div
-              style={{
-                padding: "2px 8px",
-                borderRadius: 999,
-                border: `1px solid ${UI_BORDER_SUBTLE}`,
-                fontSize: 10,
-                color: UI_TEXT_SECONDARY,
-              }}
-            >
-              {activeDay.previewLines.length} {activeDay.previewLines.length === 1 ? "event" : "events"}
-            </div>
-          </div>
-          {activeDay.previewLines.length > 0 ? (
-            activeDay.previewLines.map((entry) => (
-              <div
-                key={`${activeDay.date}-${entry.id}`}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  fontSize: 12,
-                  color: UI_TEXT_PRIMARY,
-                }}
-              >
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 999,
-                    background: entry.iconColor,
-                    flexShrink: 0,
-                  }}
-                />
-                <div style={{ flex: 1, display: "flex", justifyContent: "space-between", gap: 12, minWidth: 0 }}>
-                  <span style={{ color: UI_TEXT_SECONDARY, fontWeight: 700, letterSpacing: "0.03em" }}>
-                    {entry.label}
-                  </span>
-                  <span
-                    style={{
-                      color:
-                        entry.tone === "positive"
-                          ? "#6FD58A"
-                          : entry.tone === "negative"
-                            ? "#F07A7A"
-                            : entry.tone === "warning"
-                              ? "#E8A33B"
-                              : UI_TEXT_PRIMARY,
-                      fontWeight: 700,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {entry.value}
-                  </span>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div style={{ fontSize: 12, color: UI_TEXT_SECONDARY }}>No events for this day.</div>
-          )}
-        </div>
-      </div>
-
+    <>
       <div
         className="replay-timeline-scroll"
         ref={timelineScrollRef}
@@ -2158,7 +2192,7 @@ function ReplayTimeline({
                 onFocus={() => onHoverDay(day.index)}
                 onBlur={onLeaveDay}
                 onClick={() => onSelectDay(day.index)}
-                title={`${formatDisplayDate(day.date)} � P/L ${formatSignedCurrency(day.dailyPnl)}${day.dotMarkers.length > 0 ? ` � ${day.dotMarkers.join("/")}` : ""
+                title={`${formatDisplayDate(day.date)} \u2022 P/L ${formatSignedCurrency(day.dailyPnl)}${day.dotMarkers.length > 0 ? ` \u2022 ${day.dotMarkers.join("/")}` : ""}
                   }`}
                 style={{
                   position: "relative",
@@ -2272,6 +2306,69 @@ function ReplayTimeline({
           )}
         </div>
       </div>
+    </>
+  );
+}
+
+function ReplayTimeline({
+  session,
+  mode,
+  activeDayIndex,
+  hoveredDayIndex,
+  selectedDayIndex,
+  highlight,
+  onEnterReplay,
+  onExitReplay,
+  onHoverDay,
+  onLeaveDay,
+  onSelectDay,
+}: {
+  session: ReplaySession;
+  mode: ReplayMode;
+  activeDayIndex: number;
+  hoveredDayIndex: number | null;
+  selectedDayIndex: number;
+  highlight: boolean;
+  onEnterReplay: () => void;
+  onExitReplay: () => void;
+  onHoverDay: (index: number) => void;
+  onLeaveDay: () => void;
+  onSelectDay: (index: number) => void;
+}) {
+  const activeDay = session.replayDays[activeDayIndex];
+  const [collapsed, setCollapsed] = useState(false);
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((current) => !current);
+  }, []);
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        padding: "12px 16px 14px",
+        borderTop: `1px solid ${UI_BORDER_SUBTLE}`,
+        background: UI_PANEL,
+        boxShadow: highlight ? `0 -2px 18px ${withAlpha(UI_ACCENT, 0.36)}` : "none",
+        transition: "box-shadow 180ms ease",
+      }}
+    >
+      <ReplayHeader
+        activeDay={activeDay}
+        mode={mode}
+        collapsed={collapsed}
+        onToggleCollapse={toggleCollapsed}
+        onEnterReplay={onEnterReplay}
+        onExitReplay={onExitReplay}
+      />
+      {!collapsed && <ReplayDetails activeDay={activeDay} />}
+      <ReplayDots
+        session={session}
+        hoveredDayIndex={hoveredDayIndex}
+        selectedDayIndex={selectedDayIndex}
+        onHoverDay={onHoverDay}
+        onLeaveDay={onLeaveDay}
+        onSelectDay={onSelectDay}
+      />
     </div>
   );
 }
@@ -3798,7 +3895,7 @@ function SandboxInner() {
                   {formatDisplayDate(activeReplayDay.date)}
                 </div>
                 <div style={{ marginTop: 4, fontSize: 12, color: UI_TEXT_SECONDARY }}>
-                  {activeReplayDay.changedNodeCount} nodes changed • {activeReplayDay.changedOutputCount} outputs updated
+                  {activeReplayDay.changedNodeCount} nodes changed â€¢ {activeReplayDay.changedOutputCount} outputs updated
                 </div>
               </div>
 
@@ -3964,7 +4061,7 @@ function SandboxInner() {
                       >
                         <div style={{ fontSize: 13, fontWeight: 700, color: UI_TEXT_PRIMARY }}>{position.ticker}</div>
                         <div style={{ marginTop: 4, fontSize: 11, color: UI_TEXT_SECONDARY }}>
-                          {formatSignedNumber(position.quantity)} shares • avg {formatCurrency(position.averageCost)}
+                          {formatSignedNumber(position.quantity)} shares â€¢ avg {formatCurrency(position.averageCost)}
                         </div>
                         {typeof position.marketValue === "number" && (
                           <div style={{ marginTop: 4, fontSize: 11, color: UI_TEXT_SECONDARY }}>
@@ -4005,7 +4102,7 @@ function SandboxInner() {
                           {formatSignedNumber(trade.filledShares)} shares @ {formatCurrency(trade.fillPrice)}
                         </div>
                         <div style={{ marginTop: 2, fontSize: 11, color: UI_TEXT_SECONDARY }}>
-                          Cash {formatCurrency(trade.cashBefore)} → {formatCurrency(trade.cashAfter)}
+                          Cash {formatCurrency(trade.cashBefore)} â†’ {formatCurrency(trade.cashAfter)}
                         </div>
                       </div>
                     ))}
@@ -4313,4 +4410,5 @@ export default function Sandbox() {
     </ReactFlowProvider>
   );
 }
+
 

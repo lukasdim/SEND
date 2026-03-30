@@ -21,18 +21,18 @@ Instead of just being a learning platform, we are looking into ways to export th
 
 # What it does
 ## Node-Based Editor
-The entire focus of this project is its node-based editor. There are hundreds of nodes, which can fetch and return information, xxx, perform buys and sells (or longs and shorts) based on conditions, and much more. These nodes can then be combined to create a trading strategy **(graph)** for a stock.
+The entire focus of this project is its node-based editor. We plan to eventually have hundreds of nodes, which can fetch and return information, perform calculations, perform buys and sells (or longs and shorts) based on conditions, and much more. These nodes can then be combined to create a trading strategy **(graph)** for a stock.
 
-**CumulativeOutput** Marks the end of the strategy and allows you to view the cumulative returns across all passes through the strategy. *Necessary*
+In our project, we have dervied nodes, which are nodes that are created from other nodes. With a small number of base nodes, most nodes can be built.
 
-**Note:** Other Outputs may be used. For instance, the general Output can be used. Afterwards, AlertNodes may be set based on a condition of an output variable. This is primarily for exporting to **Pine Script**, as TradingView supports alerts. It is important to note than when alert conditions are satisfied, it pauses the execution of the strategy in the SEND node editor until the user continues.
+Graphs can be tested against a historical time period of up to 6 months. During which, their trading strategy will execute all nodes within it each day using real-world data from fetch nodes. Users will also have the option to set a starting amount of money for their strategy. After execution, they will be able to view how their strategy performed by seeing P/L as well as portfolio holdings.
+
+Users can go through a **replay** to view exactly what data their strategy fetched and acted upon day by day. Users can see daily P/L, daily trades, daily node information, and a daily trace of their portfolio.
 
 ## Learning Modules
 Learning modules are implemented to both teach how to use the node editor and different stock metrics to create functional and perfomative strategies. These modules are interactive, requiring some reading and some practice within the same page. You cannot access all of the information in a module without successfully completing the practice.
 
-Modules are intended to be completed in a specific order, but it is not mandatory. We realize everyone has differences in their current knowledge and starting points. All modules will be unlocked immedietly upon account creation.
-
-These modules are intended to be broad and intesive, however, time intensive to write. To combat this, information will be manually collected and referenced by AI to generate the readings for these modules. The sources for the information used in each module will be present at the bottom of its page.
+Modules are intended to be completed in a specific order, but it is not mandatory. We realize everyone has differences in their current knowledge and starting points. All modules will automatically be open (but the user must progress through all practices in a lecture to view the entire lecture). 
 
 # Docker runtime notes
 
@@ -50,9 +50,15 @@ These modules are intended to be broad and intesive, however, time intensive to 
 
 # How we built it
 
-Initially, we used react for the frontend and java for the backend api and strategy controller. After attempting to do node exeuction and processing in java, we realized it would be better if we had an OCaml-styled type system, so we implemented OCaml. We started by building the sandbox first, as that was the core behind our tool. We continually added more and more features and then eventually added lectures.
+Initially, we used react for the frontend and java for the backend api and strategy controller. After attempting to do node exeuction and processing in java, we realized it would be better if we had an OCaml-styled type system, so we implemented OCaml. We started by building the sandbox first, as that was the core behind our tool. The user data flow looks like this:
 
-We also converted this into a docker-runnable container. That way, people can clone the files and easily run our tool on their own.
+Frontend (react) -> Backend API (Spring Java) -> Execution Engine (OCaml) -> Backend API -> Frontend
+
+We are using nginx to route requests to the frontend and /api/ endpoints to the backend. The Backend API (Java) and the Execution Engine (OCaml) both have workers that are created for the connection. Then, Java's worker starts OCaml's worker and is connected through stdin/stdout/stderr for communication of strategies and data.
+
+In the future, more workers could be added to allow for better throughput during congestion. Individual workers are also synchronized, so multiple people trying to test strategies at the same time will not cause any issues.
+
+We continually added more and more features and then eventually added lectures. We also converted this into a docker-runnable container. That way, people can clone the files and easily run our tool on their own.
 
 If you want to see more specifics on the system, github has a lot more information.
 
@@ -71,7 +77,7 @@ There were many more issues that were smaller. With the scale of this project, t
 
 Primarily, we're proud that we were able to (almost) entirely host, build, and design this project entirely on our own. Our service only connects to supabase for user authentication. Everything else was built by us and we are hosting it on our own equipment routed through cloudflare tunnel. This is a huge accomplishment, as we don't need to pay a service to keep our site online.
 
-We're also proud that we made a working environment that can represent a person's investment routine and portfolio.
+We're also proud that we made a working environment that people can actually use and learn from.
 
 # What we learned
 

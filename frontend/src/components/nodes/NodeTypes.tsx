@@ -5,8 +5,6 @@ import { Handle, Position, type Edge, type NodeProps, type NodeTypes, useReactFl
 import {
   NODE_HANDLE_STYLE,
   UI_CANVAS,
-  UI_CARD,
-  UI_ELEVATED,
   UI_TEXT_PRIMARY,
   UI_TEXT_SECONDARY,
   withAlpha,
@@ -301,6 +299,62 @@ function getHandleTop(index: number, total: number): string {
   return `${((index + 1) / (total + 1)) * 100}%`;
 }
 
+function formatPortType(port: NodeIoPort): string {
+  const typeClass = port.valueTypeClass?.toLowerCase();
+  const typeRaw = port.valueType?.toLowerCase();
+
+  const resolved = typeClass || typeRaw || "";
+  switch (resolved) {
+    case "number":
+    case "num":
+    case "numval":
+      return "Number Value";
+    case "boolean":
+    case "bool":
+    case "boolval":
+      return "Boolean Value";
+    case "any":
+    case "value":
+      return "Any Value";
+    case "string":
+    case "str":
+    case "strval":
+      return "String Value";
+    default:
+      return port.valueTypeClass || port.valueType || "unknown";
+  }
+}
+
+function toDisplayLabel(raw: string | undefined, portIndex: number, isInput: boolean): string {
+  const base = raw && raw.trim().length > 0 ? raw : isInput ? `input ${portIndex + 1}` : `output ${portIndex + 1}`;
+  return base.replace(/_/g, " ");
+}
+
+function getPortValue(port: NodeIoPort, runtimeResult: NodeRuntimeResult | undefined, inlineInputValues?: Record<string, number>): JsonScalar | undefined {
+  if (runtimeResult && hasOwnRecordKey(runtimeResult, port.name)) {
+    return runtimeResult[port.name];
+  }
+  if (inlineInputValues && hasOwnRecordKey(inlineInputValues, String(port.index))) {
+    return inlineInputValues[String(port.index)];
+  }
+  return undefined;
+}
+
+function buildPortTooltip(
+  port: NodeIoPort,
+  isInput: boolean,
+  runtimeResult: NodeRuntimeResult | undefined,
+  inlineInputValues?: Record<string, number>
+) {
+  const label = toDisplayLabel(port.name, port.index, isInput);
+  const typeLabel = formatPortType(port);
+  const value = getPortValue(port, runtimeResult, inlineInputValues);
+  const valueLabel = value === undefined ? "—" : formatRuntimeValue(value);
+  const metaLine = isInput ? typeLabel : `${typeLabel} — ${valueLabel}`;
+  const aria = `${label} — ${metaLine}`;
+  return { label, metaLine, aria };
+}
+
 function NodeHeader({ visual, name }: { visual: NodeVisual; name: string }) {
   return (
     <div style={{ padding: "10px 14px 8px" }}>
@@ -339,7 +393,6 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
   const issueColor = errorState?.severity === "warning" ? "#E8A33B" : "#E24B4A";
   const isReadOnly = data.readOnly === true;
   const shouldGlowRuntimeResult: boolean = Boolean(runtimeResultMeta?.glow ?? hasRuntimeResult);
-  const runtimeResultLabel = runtimeResultMeta?.label ?? "Updated";
 
   const visual = getNodeVisualForTheme(data.theme);
 
@@ -468,6 +521,64 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
     data.readOnly,
   ]);
 
+  const renderPortHandle = (port: NodeIoPort, idx: number, side: "left" | "right") => {
+    const isInput = side === "left";
+    const tooltip = buildPortTooltip(port, isInput, runtimeResult, inlineInputValues);
+    const wrapperPositionStyle: CSSProperties = {
+      position: "absolute",
+      top: getHandleTop(idx, isInput ? inputPorts.length : outputPorts.length),
+      transform: "translateY(-50%)",
+      zIndex: 3,
+      left: isInput ? -8 : undefined,
+      right: isInput ? undefined : -8,
+      display: "inline-block",
+    };
+
+    const tooltipStyle: CSSProperties & { [key: string]: string | undefined } = {
+      ["--port-tooltip-border" as string]: visual.handle,
+      ["--port-tooltip-bg" as string]: withAlpha(UI_CANVAS, 0.9),
+    };
+
+    return (
+      <div className={`port-with-tooltip port-${side}`} style={wrapperPositionStyle} key={`${side}-${port.index}-${port.name}`}>
+        <Handle
+          id={`${isInput ? "in" : "out"}:${port.index}`}
+          type={isInput ? "target" : "source"}
+          position={isInput ? Position.Left : Position.Right}
+          aria-label={tooltip.aria}
+          style={{
+            ...NODE_HANDLE_STYLE,
+            width: 10,
+            height: 10,
+            background:
+              data.nodeType === "if" && !isInput && port.index === 0
+                ? "#639922"
+                : data.nodeType === "if" && !isInput && port.index === 1
+                  ? "#E24B4A"
+                  : errorState?.portIndex === port.index
+                    ? issueColor
+                    : visual.handle,
+            border:
+              data.nodeType === "if" && !isInput
+                ? `2px solid ${UI_CANVAS}`
+                : errorState?.portIndex === port.index
+                  ? `2px solid ${UI_CANVAS}`
+                  : "none",
+            position: "relative",
+            left: 0,
+            right: 0,
+            top: 0,
+            transform: "none",
+          }}
+        />
+        <span className="port-tooltip" style={tooltipStyle}>
+          <span className="port-tooltip__label">{tooltip.label}</span>
+          <span className="port-tooltip__meta">{tooltip.metaLine}</span>
+        </span>
+      </div>
+    );
+  };
+
   return (
     <div
       style={{
@@ -496,25 +607,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
               : "0 10px 24px rgba(0, 0, 0, 0.18)",
         }}
       >
-        {inputPorts.map((port, idx) => (
-          <Handle
-            key={`in-${port.index}-${port.name}`}
-            id={`in:${port.index}`}
-            type="target"
-            position={Position.Left}
-            style={{
-              ...NODE_HANDLE_STYLE,
-              width: 10,
-              height: 10,
-              background: errorState?.portIndex === port.index ? issueColor : visual.handle,
-              border: errorState?.portIndex === port.index ? `2px solid ${UI_CANVAS}` : "none",
-              left: -8,
-              top: getHandleTop(idx, inputPorts.length),
-              transform: "translateY(-50%)",
-              zIndex: 3,
-            }}
-          />
-        ))}
+        {inputPorts.map((port, idx) => renderPortHandle(port, idx, "left"))}
 
         <div
           style={{
@@ -745,36 +838,9 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
           )}
         </div>
 
-        {outputPorts.map((port, idx) => (
-          <Handle
-            key={`out-${port.index}-${port.name}`}
-            id={`out:${port.index}`}
-            type="source"
-            position={Position.Right}
-            style={{
-              ...NODE_HANDLE_STYLE,
-              width: 10,
-              height: 10,
-              background:
-                data.nodeType === "if" && port.index === 0 ? "#639922" : data.nodeType === "if" && port.index === 1 ? "#E24B4A" : visual.handle,
-              border: data.nodeType === "if" ? `2px solid ${UI_CANVAS}` : "none",
-              right: -8,
-              top: getHandleTop(idx, outputPorts.length),
-              transform: "translateY(-50%)",
-              zIndex: 3,
-            }}
-          />
-        ))}
+        {outputPorts.map((port, idx) => renderPortHandle(port, idx, "right"))}
       </div>
 
-      {hasRuntimeResult && (
-        <NodeOutputPanel
-          visual={visual}
-          runtimeResult={runtimeResult}
-          shouldGlow={shouldGlowRuntimeResult}
-          runtimeResultLabel={runtimeResultLabel}
-        />
-      )}
     </div>
   );
 }
@@ -806,133 +872,10 @@ function formatRuntimeValue(value: JsonScalar): string {
   return truncateValue(JSON.stringify(value));
 }
 
-function formatOutputLabel(key: string): string {
-  const spaced = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
-
 function truncateValue(value: string): string {
   if (value.length <= MAX_RUNTIME_VALUE_LENGTH) return value;
   return `${value.slice(0, MAX_RUNTIME_VALUE_LENGTH - 3)}...`;
 }
-
-type NodeOutputPanelProps = {
-  visual: NodeVisual;
-  runtimeResult: NodeRuntimeResult;
-  shouldGlow: boolean;
-  runtimeResultLabel: string;
-};
-
-function NodeOutputPanel({
-  visual,
-  runtimeResult,
-  shouldGlow,
-  runtimeResultLabel,
-}: NodeOutputPanelProps) {
-  const entries = Object.entries(runtimeResult);
-  if (entries.length === 0) return null;
-
-  const glowBorder = shouldGlow ? `0 0 0 1px ${visual.border}, 0 0 12px ${visual.border}45` : undefined;
-
-  return (
-    <div
-      style={{
-        position: "relative",
-        zIndex: 4,
-        marginTop: 8,
-        marginLeft: 16,
-        marginRight: 16,
-        padding: "12px 14px",
-        borderRadius: 10,
-        background: UI_ELEVATED,
-        border: `1px solid ${visual.border}`,
-        boxShadow: glowBorder ?? "0 6px 16px rgba(0, 0, 0, 0.3)",
-        pointerEvents: "none",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-          marginBottom: 6,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: visual.sub,
-          }}
-        >
-          Output
-        </div>
-        <div
-          style={{
-            padding: "3px 8px",
-            borderRadius: 999,
-            background: `${visual.border}22`,
-            border: `1px solid ${visual.border}`,
-            color: UI_TEXT_PRIMARY,
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: "0.04em",
-            textTransform: "uppercase",
-          }}
-        >
-          {runtimeResultLabel}
-        </div>
-      </div>
-      <div
-        style={{
-          display: "grid",
-          gap: 4,
-          background: withAlpha(UI_CARD, 0.4),
-          borderRadius: 6,
-          padding: "6px 8px",
-        }}
-      >
-        {entries.map(([key, value]) => (
-          <div
-            key={key}
-            style={{
-              display: "flex",
-              alignItems: "baseline",
-              justifyContent: "space-between",
-              gap: 8,
-              fontSize: 11,
-              color: UI_TEXT_PRIMARY,
-              lineHeight: 1.3,
-            }}
-          >
-            <span
-              style={{
-                fontSize: 9,
-                letterSpacing: "0.04em",
-                textTransform: "uppercase",
-                color: UI_TEXT_SECONDARY,
-              }}
-            >
-              {formatOutputLabel(key)}
-            </span>
-            <span
-              style={{
-                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                textAlign: "right",
-              }}
-            >
-              {formatRuntimeValue(value)}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function hasIncomingEdgeForPort(edges: Edge[], nodeId: string, port: NodeIoPort, inputCount: number): boolean {
   return edges.some((edge) => {
     if (edge.target !== nodeId) return false;

@@ -50,11 +50,32 @@ These modules are intended to be broad and intesive, however, time intensive to 
 
 # How we built it
 
+Initially, we used react for the frontend and java for the backend api and strategy controller. After attempting to do node exeuction and processing in java, we realized it would be better if we had an OCaml-styled type system, so we implemented OCaml. We started by building the sandbox first, as that was the core behind our tool. We continually added more and more features and then eventually added lectures.
+
+We also converted this into a docker-runnable container. That way, people can clone the files and easily run our tool on their own.
+
+If you want to see more specifics on the system, github has a lot more information.
+
 # Challenges we ran into
+
+We struggled on creating the execution agent at first. It was primarily going to be in java, so a lot of work was made in java that now doesn't exist because it was inefficient.
+
+It was also quite difficult to determine what features would be difficult for users to use.
+
+There was a bit of trouble with cloudflare and docker as well. We initially had trouble mapping the correct ip and port to cloudflared (my app (my computer) -> cloudflared (my computer) -> cloudflare (the internet)), which was later resolved. Then, we had issues with cloudflare DNS and cloudflared tunneling (again, an app on my computer). Later, we had issues with cloudflare access permissions that we solved.
+
+There were many more issues that were smaller. With the scale of this project, there were bound to be many large issues. Importantly, we were able to solve and learn from them.
+
 
 # Accomplishments that we're proud of
 
+Primarily, we're proud that we were able to (almost) entirely host, build, and design this project entirely on our own. Our service only connects to supabase for user authentication. Everything else was built by us and we are hosting it on our own equipment routed through cloudflare tunnel. This is a huge accomplishment, as we don't need to pay a service to keep our site online.
+
+We're also proud that we made a working environment that can represent a person's investment routine and portfolio.
+
 # What we learned
+
+Through this project, we were able to learn a lot about industry-used tools and concepts, like cloudflare for DNS proxying, docker for containerized and secure app deployment, proper git and github usage and documentation, spring for java services, connecting apps via stdin and stdout, and much, much more.
 
 # What's next for SEND
 
@@ -66,3 +87,18 @@ We have many things planned for the Learning Modules, including:
     2. Expanding the library of modules and cover more advanced topics
     3. New modules created entirely by industry professionals
     4. Support for new external connections
+
+## Sandbox
+
+- Export to pine script!
+    - Pine Script is a scripting language used by TradingView. It is used for stock analysis with live stock data.
+- More derived nodes
+- Integrate AI to allow for personalized feedback on strategies, explanations of strategies, and recommendations.
+- Helpful walkthroughs/tours on first visit
+- Easier to use for beginners
+
+## Derived Nodes "Marketplace"
+
+- Planning to allow users to make their own derived nodes for their own use.
+- Users can then upload a derived node to the marketplace to share what they habe created.
+- Other users can add uploaded derived nodes to their own library to use

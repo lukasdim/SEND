@@ -4403,7 +4403,91 @@ function previewRightHandleStyle(handleColor: string): React.CSSProperties {
   };
 }
 
+function useIsPhoneDevice() {
+  const [isPhoneDevice, setIsPhoneDevice] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
+
+    const mediaQuery = window.matchMedia("(max-width: 767px) and (pointer: coarse)");
+    const updatePhoneDevice = () => setIsPhoneDevice(mediaQuery.matches);
+
+    updatePhoneDevice();
+
+    mediaQuery.addEventListener("change", updatePhoneDevice);
+    return () => mediaQuery.removeEventListener("change", updatePhoneDevice);
+  }, []);
+
+  return isPhoneDevice;
+}
+
+function SandboxMobileBlocker() {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        width: "100vw",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: UI_APP_SHELL,
+        color: UI_TEXT_PRIMARY,
+        padding: 24,
+        boxSizing: "border-box",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 18,
+          textAlign: "center",
+        }}
+      >
+        <div
+          aria-hidden
+          style={{
+            width: 68,
+            height: 68,
+            borderRadius: 999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: withAlpha("#E24B4A", 0.16),
+            border: `1px solid ${withAlpha("#E24B4A", 0.42)}`,
+            color: "#E24B4A",
+            fontSize: 34,
+            fontWeight: 800,
+            lineHeight: 1,
+          }}
+        >
+          !
+        </div>
+        <p
+          style={{
+            margin: 0,
+            maxWidth: 320,
+            fontSize: 16,
+            lineHeight: 1.5,
+            color: UI_TEXT_SECONDARY,
+          }}
+        >
+          The sandbox is not intended for mobile use.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function Sandbox() {
+  const isPhoneDevice = useIsPhoneDevice();
+
+  if (isPhoneDevice) {
+    return <SandboxMobileBlocker />;
+  }
+
   return (
     <ReactFlowProvider>
       <SandboxInner />

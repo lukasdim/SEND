@@ -3174,6 +3174,7 @@ function SandboxInner() {
 
   return (
     <div
+      className={isReplayMode ? "sandbox-root replay-mode" : "sandbox-root"}
       style={{
         position: "relative",
         display: "flex",

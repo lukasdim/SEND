@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useLocation } from "react-router-dom";
 import ReactFlow, {
   Background,
   type Connection,
@@ -153,6 +154,8 @@ type ReplaySession = {
 };
 
 const STRATEGY_TEST_COOLDOWN_MS = 5000;
+const LANDING_HIGHLIGHT_TEMPLATE_ID = "aapl_buy_sell_template";
+const LANDING_HIGHLIGHT_START_DATE = "2024-02-05";
 
 type PaletteDragState = {
   nodeType: string;
@@ -2263,6 +2266,7 @@ function ReplayTimeline({
 
 function SandboxInner() {
   const { fitView, getZoom, screenToFlowPosition, setCenter } = useReactFlow();
+  const location = useLocation();
   const [nodeRegistry, setNodeRegistry] = useState(() => createEmptyNodeRegistry());
   const [isNodeCatalogLoading, setIsNodeCatalogLoading] = useState(true);
   const [activeIssues, setActiveIssues] = useState<SandboxIssue[]>([]);
@@ -2293,9 +2297,17 @@ function SandboxInner() {
   const [isReplayTimelineHighlighted, setIsReplayTimelineHighlighted] = useState(false);
   const [replayFocusedNodeId, setReplayFocusedNodeId] = useState<string | null>(null);
   const [hoveredSignalId, setHoveredSignalId] = useState<string | null>(null);
+  const [isTestStrategySpotlightVisible, setIsTestStrategySpotlightVisible] = useState(false);
+  const [hasAppliedLandingTemplate, setHasAppliedLandingTemplate] = useState(false);
+  const [hasAppliedLandingSimulationPreset, setHasAppliedLandingSimulationPreset] = useState(false);
   const timeoutRef = useRef<number | null>(null);
   const replayHighlightTimeoutRef = useRef<number | null>(null);
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
+
+  const shouldHighlightTestStrategy = useMemo(() => {
+    const searchParams = new URLSearchParams(location.search);
+    return searchParams.get("highlight") === "test-strategy";
+  }, [location.search]);
 
   const {
     nodePalette,
@@ -2304,6 +2316,32 @@ function SandboxInner() {
     getDefaultNodeData,
     getNodeVisual,
   } = nodeRegistry;
+
+  useEffect(() => {
+    setIsTestStrategySpotlightVisible(shouldHighlightTestStrategy);
+  }, [shouldHighlightTestStrategy]);
+
+  useEffect(() => {
+    if (!shouldHighlightTestStrategy || hasAppliedLandingSimulationPreset || isSimulationBoundsLoading) {
+      return;
+    }
+
+    setSimulationConfig((current) =>
+      adjustSimulationRange(
+        {
+          ...current,
+          startDate: LANDING_HIGHLIGHT_START_DATE,
+        },
+        simulationBounds
+      )
+    );
+    setHasAppliedLandingSimulationPreset(true);
+  }, [
+    hasAppliedLandingSimulationPreset,
+    isSimulationBoundsLoading,
+    shouldHighlightTestStrategy,
+    simulationBounds,
+  ]);
 
   const groupedNodePalette = useMemo(() => {
     const grouped = new Map<string, NodePaletteItem[]>();
@@ -2803,6 +2841,29 @@ function SandboxInner() {
     },
     [dismissTransientBanner, fitView, getDefaultNodeData, isSupportedNodeType, notifyTransientBanner, setEdges, setNodes]
   );
+
+  useEffect(() => {
+    if (!shouldHighlightTestStrategy || hasAppliedLandingTemplate || isStrategiesLoading) {
+      return;
+    }
+
+    const starterStrategy = strategies.find((strategy) => strategy.id === LANDING_HIGHLIGHT_TEMPLATE_ID);
+    if (!starterStrategy) {
+      if (strategies.length > 0) {
+        setHasAppliedLandingTemplate(true);
+      }
+      return;
+    }
+
+    setHasAppliedLandingTemplate(true);
+    void loadStrategy(starterStrategy);
+  }, [
+    hasAppliedLandingTemplate,
+    isStrategiesLoading,
+    loadStrategy,
+    shouldHighlightTestStrategy,
+    strategies,
+  ]);
 
   const onConnect = useCallback(
     (params: Edge | Connection) => {
@@ -3975,46 +4036,81 @@ function SandboxInner() {
 
         {!isReplayMode && (
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <button
-              type="button"
-              onClick={() => void onTestStrategy()}
-              disabled={
-                isStrategyTesting ||
-                isStrategyTestCoolingDown ||
-                isSimulationBoundsLoading ||
-                !hasSimulationPriceData ||
-                nodes.length === 0 ||
-                Boolean(simulationValidationMessage)
-              }
-              style={{
-                ...toolbarButtonStyle,
-                flex: 1,
-                opacity:
+            <div style={{ position: "relative", flex: 1 }}>
+              {isTestStrategySpotlightVisible && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: -34,
+                    left: 0,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "5px 9px",
+                    borderRadius: 999,
+                    background: "#F3D34A",
+                    color: "#111118",
+                    fontSize: 11,
+                    fontWeight: 800,
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                    boxShadow: `0 10px 22px ${withAlpha("#F3D34A", 0.42)}`,
+                    pointerEvents: "none",
+                    zIndex: 2,
+                  }}
+                >
+                  Click here
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsTestStrategySpotlightVisible(false);
+                  void onTestStrategy();
+                }}
+                disabled={
                   isStrategyTesting ||
-                    isStrategyTestCoolingDown ||
-                    isSimulationBoundsLoading ||
-                    !hasSimulationPriceData ||
-                    nodes.length === 0 ||
-                    simulationValidationMessage
-                    ? 0.7
-                    : 1,
-                cursor:
-                  isStrategyTesting ||
-                    isStrategyTestCoolingDown ||
-                    isSimulationBoundsLoading ||
-                    !hasSimulationPriceData ||
-                    nodes.length === 0 ||
-                    simulationValidationMessage
-                    ? "not-allowed"
-                    : "pointer",
-              }}
-            >
-              {isStrategyTesting
-                ? "Testing..."
-                : isStrategyTestCoolingDown
-                  ? strategyTestCooldownLabel
-                  : "Test strategy"}
-            </button>
+                  isStrategyTestCoolingDown ||
+                  isSimulationBoundsLoading ||
+                  !hasSimulationPriceData ||
+                  nodes.length === 0 ||
+                  Boolean(simulationValidationMessage)
+                }
+                style={{
+                  ...toolbarButtonStyle,
+                  width: "100%",
+                  opacity:
+                    isStrategyTesting ||
+                      isStrategyTestCoolingDown ||
+                      isSimulationBoundsLoading ||
+                      !hasSimulationPriceData ||
+                      nodes.length === 0 ||
+                      simulationValidationMessage
+                      ? 0.7
+                      : 1,
+                  cursor:
+                    isStrategyTesting ||
+                      isStrategyTestCoolingDown ||
+                      isSimulationBoundsLoading ||
+                      !hasSimulationPriceData ||
+                      nodes.length === 0 ||
+                      simulationValidationMessage
+                      ? "not-allowed"
+                      : "pointer",
+                  borderColor: isTestStrategySpotlightVisible ? "#F3D34A" : UI_BORDER_SUBTLE,
+                  boxShadow: isTestStrategySpotlightVisible
+                    ? `0 0 0 3px ${withAlpha("#F3D34A", 0.25)}, 0 0 24px ${withAlpha("#F3D34A", 0.45)}`
+                    : "none",
+                }}
+              >
+                {isStrategyTesting
+                  ? "Testing..."
+                  : isStrategyTestCoolingDown
+                    ? strategyTestCooldownLabel
+                    : "Test strategy"}
+              </button>
+            </div>
 
             <button
               type="button"

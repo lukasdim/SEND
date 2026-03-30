@@ -21,6 +21,16 @@ function getSublectureSectionId(index: number, title: string): string {
   return `sublecture-${index}-${slugifyMarkdownHeading(title)}`;
 }
 
+function getHashAnchorId(): string | null {
+  const rawHash = window.location.hash;
+  if (!rawHash || rawHash === "#") {
+    return null;
+  }
+
+  const anchorId = decodeURIComponent(rawHash.slice(1)).trim();
+  return anchorId.length > 0 ? anchorId : null;
+}
+
 export default function LecturePage() {
   const { pathSlug = "", categorySlug = "", lectureSlug = "" } = useParams();
   const [lectureDetail, setLectureDetail] = useState<LectureDetailResponse | null>(null);
@@ -118,6 +128,31 @@ export default function LecturePage() {
       window.removeEventListener("resize", scheduleUpdate);
     };
   }, [lectureDetail, progress?.highestUnlockedSublectureIndex]);
+
+  useEffect(() => {
+    if (!lectureDetail || !progress) {
+      return;
+    }
+
+    const requestedAnchorId = getHashAnchorId();
+    if (!requestedAnchorId) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const element = document.getElementById(requestedAnchorId);
+      if (!element) {
+        return;
+      }
+
+      setActiveAnchorId(requestedAnchorId);
+      element.scrollIntoView({ behavior: "auto", block: "start" });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [lectureDetail, progress]);
 
   if (!pathSlug || !categorySlug || !lectureSlug) {
     return <Navigate to="/library" replace />;

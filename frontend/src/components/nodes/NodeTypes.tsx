@@ -5,6 +5,7 @@ import { Handle, Position, type Edge, type NodeProps, type NodeTypes, useReactFl
 import {
   NODE_HANDLE_STYLE,
   UI_CANVAS,
+  UI_CARD,
   UI_TEXT_PRIMARY,
   UI_TEXT_SECONDARY,
   withAlpha,
@@ -841,6 +842,14 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
         {outputPorts.map((port, idx) => renderPortHandle(port, idx, "right"))}
       </div>
 
+      {runtimeResult && outputPorts.length > 0 && data.readOnly && (
+        <OutputWindow
+          outputs={outputPorts}
+          runtimeResult={runtimeResult}
+          runtimeResultMeta={runtimeResultMeta}
+          visual={visual}
+        />
+      )}
     </div>
   );
 }
@@ -863,6 +872,7 @@ function inputStyle(visual: NodeVisual): CSSProperties {
 }
 
 const MAX_RUNTIME_VALUE_LENGTH = 26;
+const OUTPUT_ROW_HEIGHT = 22;
 
 function formatRuntimeValue(value: JsonScalar): string {
   if (value === null) return "null";
@@ -875,6 +885,114 @@ function formatRuntimeValue(value: JsonScalar): string {
 function truncateValue(value: string): string {
   if (value.length <= MAX_RUNTIME_VALUE_LENGTH) return value;
   return `${value.slice(0, MAX_RUNTIME_VALUE_LENGTH - 3)}...`;
+}
+
+function capitalizeLabel(label: string): string {
+  return label.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function OutputWindow({
+  outputs,
+  runtimeResult,
+  runtimeResultMeta,
+  visual,
+}: {
+  outputs: NodeIoPort[];
+  runtimeResult: NodeRuntimeResult;
+  runtimeResultMeta?: NodeRuntimeResultMeta;
+  visual: ReturnType<typeof getNodeVisualForTheme>;
+}) {
+  if (!outputs || outputs.length === 0) return null;
+
+  const metaLabel = runtimeResultMeta?.label;
+  const glow = Boolean(runtimeResultMeta?.glow);
+
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        width: "100%",
+        pointerEvents: "none",
+      }}
+    >
+      <div
+        style={{
+          position: "relative",
+          border: `1px solid ${withAlpha(visual.border, 0.7)}`,
+          borderRadius: 10,
+          background: withAlpha(UI_CARD, 0.9),
+          padding: "10px 10px 8px 10px",
+          boxShadow: glow
+            ? `0 0 0 1px ${visual.border}, 0 0 18px ${visual.border}55, 0 10px 18px rgba(0,0,0,0.26)`
+            : "0 8px 16px rgba(0, 0, 0, 0.18)",
+        }}
+      >
+        {metaLabel && (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              marginBottom: 12,
+            }}
+          >
+            <div
+              style={{
+                padding: "5px 10px",
+                borderRadius: 999,
+                background: withAlpha(visual.border, 0.18),
+                border: `1px solid ${withAlpha(visual.border, 0.65)}`,
+                color: visual.title,
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                lineHeight: 1.1,
+              }}
+            >
+              {metaLabel}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {outputs.map((port) => {
+            const value = getPortValue(port, runtimeResult, undefined);
+            return (
+              <div
+                key={`output-window-${port.index}-${port.name}`}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto",
+                  alignItems: "center",
+                  columnGap: 10,
+                  rowGap: 4,
+                  height: OUTPUT_ROW_HEIGHT,
+                  color: UI_TEXT_PRIMARY,
+                  fontSize: 11,
+                  lineHeight: 1.2,
+                }}
+              >
+                <div
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    color: visual.sub,
+                    letterSpacing: "0.03em",
+                  }}
+                >
+                  {capitalizeLabel(toDisplayLabel(port.name, port.index, false))}
+                </div>
+                <div style={{ color: UI_TEXT_PRIMARY, fontWeight: 600, textAlign: "right" }}>
+                  {value === undefined ? "-" : formatRuntimeValue(value)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 function hasIncomingEdgeForPort(edges: Edge[], nodeId: string, port: NodeIoPort, inputCount: number): boolean {
   return edges.some((edge) => {
@@ -890,7 +1008,7 @@ export function createNodeRegistry(catalog: NodeIoCatalog): NodeRegistry {
   const reactFlowTypes: NodeTypes = {};
 
   for (const node of catalog.nodes) {
-      const fieldValues = applyFieldValueDefaults(
+    const fieldValues = applyFieldValueDefaults(
       node.nodeType,
       Object.fromEntries(
         node.dataFields.map((field) => [field.name, toInitialFieldValue(field)])
@@ -926,18 +1044,18 @@ export function createNodeRegistry(catalog: NodeIoCatalog): NodeRegistry {
     getDefaultNodeData: (type: string) => {
       const data = nodeDataByType[type];
       if (!data) return undefined;
-  return {
-      ...data,
-      inputs: [...data.inputs],
-      outputs: [...data.outputs],
-            dataFields: data.dataFields.map((field) => ({
-              ...field,
-              visibleWhen: field.visibleWhen
-                ? { ...field.visibleWhen, values: [...field.visibleWhen.values] }
-                : undefined,
-            })),
-      fieldValues: { ...data.fieldValues },
-      errorState: data.errorState ? { ...data.errorState, details: data.errorState.details ? [...data.errorState.details] : undefined } : undefined,
+      return {
+        ...data,
+        inputs: [...data.inputs],
+        outputs: [...data.outputs],
+        dataFields: data.dataFields.map((field) => ({
+          ...field,
+          visibleWhen: field.visibleWhen
+            ? { ...field.visibleWhen, values: [...field.visibleWhen.values] }
+            : undefined,
+        })),
+        fieldValues: { ...data.fieldValues },
+        errorState: data.errorState ? { ...data.errorState, details: data.errorState.details ? [...data.errorState.details] : undefined } : undefined,
       };
     },
     getNodeVisual: (type: string) => {

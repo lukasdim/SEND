@@ -1125,7 +1125,19 @@ function estimateReplayNodeHeight(node: Node<NodeData>): number {
 
   if (nodeData.runtimeResult && Object.keys(nodeData.runtimeResult).length > 0) {
     const runtimeLineCount = JSON.stringify(nodeData.runtimeResult, null, 2).split("\n").length;
-    height += 78 + runtimeLineCount * 14;
+    const outputCount = nodeData.outputs?.length ?? 0;
+    const rowHeight = 22;
+    const rowGap = 4;
+    const headerHeight = nodeData.runtimeResultMeta?.label ? 22 : 0;
+    const headerGap = nodeData.runtimeResultMeta?.label ? 10 : 0;
+    const cardPaddingVertical = 18; // top+bottom padding total (10 + 8)
+    const spacer = 14; // gap from node body to card
+    const rowsHeight = Math.max(outputCount, 1) * rowHeight + Math.max(outputCount - 1, 0) * rowGap;
+    height += spacer;
+    height += headerHeight + headerGap;
+    height += rowsHeight + cardPaddingVertical;
+    // small allowance for JSON formatting differences
+    height += Math.max(0, runtimeLineCount - outputCount) * 4;
   }
 
   return height;

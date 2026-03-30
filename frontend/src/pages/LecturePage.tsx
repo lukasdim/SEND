@@ -280,7 +280,7 @@ export default function LecturePage() {
               <div className="lecture-progress-fill" style={{ width: `${progressPercent}%` }} />
             </div>
             <div className="lecture-progress-caption">
-              <span>{lectureDetail.category.description}</span>
+              <span>{lectureDetail.category.description ?? lectureDetail.summary}</span>
               <span>{isLectureLoading ? "Restoring saved progress..." : "Saved progress restored automatically"}</span>
             </div>
           </div>
@@ -336,7 +336,7 @@ export default function LecturePage() {
           <main className="lecture-content-column">
             <section className="lecture-content-card lecture-content-card--summary">
               <div className="lecture-content-meta">
-                <span>{lectureDetail.category.hero ?? lectureDetail.category.description}</span>
+                <span>{lectureDetail.summary}</span>
                 <span>
                   {unlockedSublectures.length} of {lectureDetail.sublectures.length} sublectures visible
                 </span>

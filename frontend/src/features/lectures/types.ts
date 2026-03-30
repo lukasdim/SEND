@@ -7,7 +7,7 @@ export type LecturePath = {
 export type LectureCategory = {
   slug: string;
   title: string;
-  description: string;
+  description?: string | null;
   hero?: string;
 };
 

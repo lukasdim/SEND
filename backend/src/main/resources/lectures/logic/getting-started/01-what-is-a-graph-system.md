@@ -1,4 +1,4 @@
-:::lecture { "id": "logic--getting-started--what-is-a-graph-system", "slug": "what-is-a-graph-system", "path": { "slug": "logic", "title": "Logic", "description": "Reasoning-focused lessons and graph-building fundamentals." }, "category": { "slug": "getting-started", "title": "Getting Started", "description": "Start here when the first logic onboarding lectures arrive.", "hero": "Reserved for introductory logic lessons." }, "title": "What Is a Graph System?", "summary": "Learn what a graph system is by building your first simple strategy.", "estimatedMinutes": 14 }
+:::lecture { "id": "logic--getting-started--what-is-a-graph-system", "slug": "what-is-a-graph-system", "path": { "slug": "logic", "title": "Logic", "description": "Reasoning-focused lessons and graph-building fundamentals." }, "category": { "slug": "getting-started", "title": "Getting Started" }, "title": "What Is a Graph System?", "summary": "Learn what a graph system is by building your first simple strategy.", "estimatedMinutes": 14 }
 
 :::sublecture { "id":"understanding-the-parts-of-a-graph", "title":"Understanding The Parts Of A Graph" }
 # Understanding The Parts Of A Graph

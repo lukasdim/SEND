@@ -22,7 +22,7 @@ public final class LectureModels {
     public record LectureCategory(
             String slug,
             String title,
-            String description,
+            @Nullable String description,
             @Nullable String hero) {}
 
     public record LectureCheckpoint(

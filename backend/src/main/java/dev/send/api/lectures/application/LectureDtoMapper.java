@@ -40,21 +40,16 @@ public class LectureDtoMapper {
                             new LectureCategory(
                                     "getting-started",
                                     "Getting Started",
-                                    "Start here when the first logic onboarding lectures arrive.",
-                                    "Reserved for introductory logic lessons."),
-                            new LectureCategory(
-                                    "foundations",
-                                    "Foundations",
-                                    "Start with the structure of SEND lectures, the flow of gated sublectures, and the first graph-building patterns.",
-                                    "Category-driven learning paths with unlockable checkpoints."))),
+                                    null,
+                                    null))),
             new CatalogPathSeed(
                     new LecturePath("economics", "Economics", "Market and economic intuition organized into guided lecture categories."),
                     List.of(
                             new LectureCategory(
                                     "getting-started",
                                     "Getting Started",
-                                    "Start here when the first economics onboarding lectures arrive.",
-                                    "Reserved for introductory economics lessons."))));
+                                    null,
+                                    null))));
 
     public LectureCatalogResponseDto toCatalogResponse(List<LectureDefinition> lectures) {
         Map<String, CatalogPathAccumulator> paths = new LinkedHashMap<>();

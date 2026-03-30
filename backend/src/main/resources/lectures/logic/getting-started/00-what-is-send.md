@@ -1,4 +1,4 @@
-:::lecture { "id": "logic--getting-started--what-is-send", "slug": "what-is-send", "path": { "slug": "logic", "title": "Logic", "description": "Reasoning-focused lessons and graph-building fundamentals." }, "category": { "slug": "getting-started", "title": "Getting Started", "description": "Start here when the first logic onboarding lectures arrive.", "hero": "Reserved for introductory logic lessons." }, "title": "What Is SEND?", "summary": "Learn what SEND is and how you will use it to build economic strategies.", "estimatedMinutes": 5 }
+:::lecture { "id": "logic--getting-started--what-is-send", "slug": "what-is-send", "path": { "slug": "logic", "title": "Logic", "description": "Reasoning-focused lessons and graph-building fundamentals." }, "category": { "slug": "getting-started", "title": "Getting Started" }, "title": "What Is SEND?", "summary": "Learn what SEND is and how you will use it to build economic strategies.", "estimatedMinutes": 5 }
 
 :::sublecture { "id":"what-send-means", "title":"What SEND Means" }
 

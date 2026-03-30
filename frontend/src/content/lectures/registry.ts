@@ -25,23 +25,12 @@ const lectureCategoriesByPath: Record<string, LectureCategory[]> = {
     {
       slug: "getting-started",
       title: "Getting Started",
-      description: "Start here when the first logic onboarding lectures arrive.",
-      hero: "Reserved for introductory logic lessons.",
-    },
-    {
-      slug: "foundations",
-      title: "Foundations",
-      description:
-        "Start with the structure of SEND lectures, the flow of gated sublectures, and the first graph-building patterns.",
-      hero: "Category-driven learning paths with unlockable checkpoints.",
     },
   ],
   economics: [
     {
       slug: "getting-started",
       title: "Getting Started",
-      description: "Start here when the first economics onboarding lectures arrive.",
-      hero: "Reserved for introductory economics lessons.",
     },
   ],
 };

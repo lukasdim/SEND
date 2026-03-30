@@ -109,7 +109,7 @@ public class LectureMarkdownParser {
         LectureCategory category = new LectureCategory(
                 requiredText(categoryNode, "slug"),
                 requiredText(categoryNode, "title"),
-                requiredText(categoryNode, "description"),
+                optionalText(categoryNode, "description"),
                 optionalText(categoryNode, "hero"));
 
         return new LectureDefinition(

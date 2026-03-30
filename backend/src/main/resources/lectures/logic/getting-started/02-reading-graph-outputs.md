@@ -1,4 +1,4 @@
-:::lecture { "id": "logic--getting-started--reading-graph-outputs", "slug": "reading-graph-outputs", "path": { "slug": "logic", "title": "Logic", "description": "Reasoning-focused lessons and graph-building fundamentals." }, "category": { "slug": "getting-started", "title": "Getting Started", "description": "Start here when the first logic onboarding lectures arrive.", "hero": "Reserved for introductory logic lessons." }, "title": "Reading Graph Outputs", "summary": "Learn how to interpret results and signals from your system.", "estimatedMinutes": 11 }
+:::lecture { "id": "logic--getting-started--reading-graph-outputs", "slug": "reading-graph-outputs", "path": { "slug": "logic", "title": "Logic", "description": "Reasoning-focused lessons and graph-building fundamentals." }, "category": { "slug": "getting-started", "title": "Getting Started" }, "title": "Reading Graph Outputs", "summary": "Learn how to interpret results and signals from your system.", "estimatedMinutes": 11 }
 
 :::sublecture { "id":"outputs-are-what-nodes-emit", "title":"Outputs Are What Nodes Emit" }
 # Outputs Are What Nodes Emit

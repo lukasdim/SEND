@@ -163,9 +163,11 @@ export default function Library() {
                   Category
                 </div>
                 <h2 style={{ margin: 0, fontSize: 24, color: UI_TEXT_PRIMARY }}>{category.title}</h2>
-                <p style={{ margin: "8px 0 0", color: UI_TEXT_SECONDARY, lineHeight: 1.6, maxWidth: 720 }}>
-                  {category.description}
-                </p>
+                {category.description && (
+                  <p style={{ margin: "8px 0 0", color: UI_TEXT_SECONDARY, lineHeight: 1.6, maxWidth: 720 }}>
+                    {category.description}
+                  </p>
+                )}
               </div>
 
               {category.hero && (

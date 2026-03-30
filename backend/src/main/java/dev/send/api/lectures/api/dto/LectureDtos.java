@@ -21,7 +21,7 @@ public final class LectureDtos {
     public record LectureCatalogCategoryDto(
             String slug,
             String title,
-            String description,
+            @Nullable String description,
             @Nullable String hero,
             List<LectureCatalogItemDto> lectures) {}
 
@@ -45,7 +45,7 @@ public final class LectureDtos {
     public record LectureCategoryDto(
             String slug,
             String title,
-            String description,
+            @Nullable String description,
             @Nullable String hero) {}
 
     public record LectureCheckpointDto(

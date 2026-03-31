@@ -1,110 +1,129 @@
-# Inspiration
-## Initial Idea
+# SEND
 
-Initially, this node-based idea came from **Hytale**, a block-based game similar to **Minecraft** with extensive modding support in java. Hytale has a node editor to completely customize the terrain, from making new biomes to floating islands.
+SEND is an interactive financial education platform centered around a node-based strategy editor. Users can build trading logic as graphs, test strategies against historical market data, and work through guided learning modules that teach both the platform and core investing concepts.
 
-This extensive support through a node-based editor was extremely intriguing and my brainstorming for Hackonomics kept leading me back to that aspect.
+A working demo is available at [sendsys.io](https://sendsys.io).
 
-## Economics and Stocks
+## Features
 
-I loved learning about and trading stocks, so I decided to go that route. However, with services aimed at teaching stock trading, I find that it's difficult to process the information. I never knew what metrics to focus on for a stock. At one point I learned that the beta value of a stock is its relative volatility and conveys possible risk, but to what extent does that affect my investment? I never knew the answer, and it's hard to view the effects of these metrics in isolation.
+- Node-based editor for building trading strategies as graphs
+- Historical backtesting over past market data
+- Replay tools for reviewing daily strategy behavior, trades, and portfolio changes
+- Interactive learning modules with guided practice
+- Frontend, backend, and execution engine packaged for Docker-based local development
 
-## Later Expansion
+## Tech Stack
 
-While a sandbox-style editor is vital to the project, I realized it wasn't very strong at addressing financial literacy; it only addressed practicing previously learned knowledge. So, I transitioned into a modules based approach where users can complete interactive lessons while also having access to the sandbox for practice.
+- Frontend: React
+- Backend API: Spring / Java
+- Execution engine: OCaml
+- Reverse proxy: Nginx
+- Authentication: Supabase
+- Local runtime: Docker Compose
 
-## Real-World Use
+## Getting Started
 
-Instead of just being a learning platform, we are looking into ways to export this information to external services or languages **(Pine Script by TradingView)**. This way, users can use their trading strategies with real money if they deem it worthwile.
+### Prerequisites
 
-**NOTE: We do not advise on individual investments nor if users should export their graphs. Trade with real money at your own risk.**
+- Docker
+- A Supabase project for authentication configuration
+- csv files with historical data (NOT PROVIDED!!)
 
-# What it does
-## Node-Based Editor
-The entire focus of this project is its node-based editor. We plan to eventually have hundreds of nodes, which can fetch and return information, perform calculations, perform buys and sells (or longs and shorts) based on conditions, and much more. These nodes can then be combined to create a trading strategy **(graph)** for a stock.
+### Required Local Files
 
-In our project, we have dervied nodes, which are nodes that are created from other nodes. With a small number of base nodes, most nodes can be built.
+Before starting the app, make sure your project root includes:
 
-Graphs can be tested against a historical time period of up to 6 months. During which, their trading strategy will execute all nodes within it each day using real-world data from fetch nodes. Users will also have the option to set a starting amount of money for their strategy. After execution, they will be able to view how their strategy performed by seeing P/L as well as portfolio holdings.
+- A `/data` directory
+- CSV files with the structure shown below
+- A `.env` file with the required environment variables
 
-Users can go through a **replay** to view exactly what data their strategy fetched and acted upon day by day. Users can see daily P/L, daily trades, daily node information, and a daily trace of their portfolio.
+**Required CSV files and titles for the Java backend**
 
-## Learning Modules
-Learning modules are implemented to both teach how to use the node editor and different stock metrics to create functional and perfomative strategies. These modules are interactive, requiring some reading and some practice within the same page. You cannot access all of the information in a module without successfully completing the practice.
+`us-balance-quarterly.csv`
 
-Modules are intended to be completed in a specific order, but it is not mandatory. We realize everyone has differences in their current knowledge and starting points. All modules will automatically be open (but the user must progress through all practices in a lecture to view the entire lecture). 
+```text
+ticker;currency;fiscal_year;fiscal_period;report_date;publish_date;restated_date;shares_basic;shares_diluted;cash_and_st_investments;accounts_notes_receivables;inventories;total_current_assets;ppe_net;lt_investments_receivables;other_lt_assets;total_noncurrent_assets;total_assets;payables_accruals;st_debt;total_current_liabilities;lt_debt;total_noncurrent_liabilities;total_liabilities;share_capital_apic;treasury_stock;retained_earnings;total_equity;total_liabilities_equity
+```
 
-# Docker runtime notes
+`us-cashflow-quarterly.csv`
 
-- The backend container packages the OCaml worker as a local executable and starts it through `ocaml.worker.command`.
-- In Docker Compose, `OCAML_WORKER_COMMAND=/app/worker` is the supported container runtime configuration.
-- Outside Docker, the backend may still rely on the existing local source checkout fallback when `ocaml.worker.command` is left empty.
-- Docker Compose is the supported local development path for app configuration.
-- Export the required environment variables before running `docker compose up --build`: `SEND_DB_PASSWORD`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `APP_AUTH_SUPABASE_ISSUER_URI`, `APP_AUTH_SUPABASE_JWK_SET_URI` or `APP_AUTH_SUPABASE_JWT_SECRET`, `APP_LECTURES_PROGRESS_COOKIE_SECRET`, and optionally `APP_AUTH_SUPABASE_AUDIENCE`.
-- The frontend now talks to the backend through the bundled Nginx reverse proxy at the same origin, so `VITE_API_URL` should normally be left empty in Docker Compose.
-- Supabase projects using legacy `HS256` signing should set `APP_AUTH_SUPABASE_JWT_SECRET` and may leave `APP_AUTH_SUPABASE_JWK_SET_URI` empty. Projects using asymmetric signing should keep `APP_AUTH_SUPABASE_JWK_SET_URI` set and leave `APP_AUTH_SUPABASE_JWT_SECRET` empty.
-- Only the frontend is published to the host, and it is bound to `127.0.0.1:5173` by default. The backend and database stay on an internal Docker network.
-- If you are fronting the stack with `cloudflared`, point the tunnel at `http://localhost:5173` on the host or at the `send-front` service inside the Docker network. Do not publish the backend or database directly.
-- The frontend proxy only trusts `CF-Connecting-IP` when the immediate peer is a local or private-network proxy. That is intended for the `cloudflared -> localhost/private Docker` path; if you later expose the frontend directly or change the proxy chain, revisit `frontend/nginx.conf`.
-- Plain `npm run dev` and local backend runs are unsupported-by-default unless you manually export the same variables outside Docker.
+```text
+ticker;currency;fiscal_year;fiscal_period;report_date;publish_date;restated_date;cf_net_income_starting_line;cf_da;change_in_fixed_assets_intangibles;change_in_working_capital;change_in_accounts_receivable;change_in_inventories;change_in_accounts_payable;change_in_other;net_cash_operating_activities;change_fixed_assets_intangibles;net_change_lti;net_cash_acquisitions_divestitures;net_cash_investing_activities;dividends_paid;repayment_of_debt;repurchase_of_equity;net_cash_financing_activities;net_change_cash
+```
 
-# How we built it
+`us-companies.csv`
 
-Initially, we used react for the frontend and java for the backend api and strategy controller. After attempting to do node exeuction and processing in java, we realized it would be better if we had an OCaml-styled type system, so we implemented OCaml. We started by building the sandbox first, as that was the core behind our tool. The user data flow looks like this:
+```text
+ticker;company_name;industry_id;ISIN;fiscal_year_end_month;number_employees;business_summary;market;CIK;main_currency
+```
 
-Frontend (react) -> Backend API (Spring Java) -> Execution Engine (OCaml) -> Backend API -> Frontend
+`us-income-quarterly.csv`
 
-We are using nginx to route requests to the frontend and /api/ endpoints to the backend. The Backend API (Java) and the Execution Engine (OCaml) both have workers that are created for the connection. Then, Java's worker starts OCaml's worker and is connected through stdin/stdout/stderr for communication of strategies and data.
+```text
+ticker;currency;fiscal_year;fiscal_period;report_date;publish_date;restated_date;revenue;cost_of_revenue;sga;research_and_development;income_da;interest_expense_net;abnormal_gains;income_tax_net;extraordinary_gains_losses;net_income
+```
 
-In the future, more workers could be added to allow for better throughput during congestion. Individual workers are also synchronized, so multiple people trying to test strategies at the same time will not cause any issues.
+`us-shareprices-daily.csv`
 
-We continually added more and more features and then eventually added lectures. We also converted this into a docker-runnable container. That way, people can clone the files and easily run our tool on their own.
+```text
+ticker;price_date;open;high;low;close;adj_close;volume;dividend;shares_outstanding
+```
 
-If you want to see more specifics on the system, github has a lot more information.
+### Environment Variables
 
-# Challenges we ran into
+Set the following variables in your `.env` file:
 
-We struggled on creating the execution agent at first. It was primarily going to be in java, so a lot of work was made in java that now doesn't exist because it was inefficient.
+- `SEND_DB_PASSWORD`
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `APP_AUTH_SUPABASE_ISSUER_URI`
+- `APP_AUTH_SUPABASE_JWK_SET_URI` or `APP_AUTH_SUPABASE_JWT_SECRET`
+- `APP_LECTURES_PROGRESS_COOKIE_SECRET`
+- `APP_AUTH_SUPABASE_AUDIENCE` (optional)
 
-It was also quite difficult to determine what features would be difficult for users to use.
+Notes:
 
-There was a bit of trouble with cloudflare and docker as well. We initially had trouble mapping the correct ip and port to cloudflared (my app (my computer) -> cloudflared (my computer) -> cloudflare (the internet)), which was later resolved. Then, we had issues with cloudflare DNS and cloudflared tunneling (again, an app on my computer). Later, we had issues with cloudflare access permissions that we solved.
+- If your Supabase project uses legacy `HS256` signing, set `APP_AUTH_SUPABASE_JWT_SECRET` and leave `APP_AUTH_SUPABASE_JWK_SET_URI` empty.
+- If your Supabase project uses asymmetric signing, set `APP_AUTH_SUPABASE_JWK_SET_URI` and leave `APP_AUTH_SUPABASE_JWT_SECRET` empty.
+- In Docker Compose, `VITE_API_URL` should usually be left empty because the frontend uses the bundled Nginx proxy.
 
-There were many more issues that were smaller. With the scale of this project, there were bound to be many large issues. Importantly, we were able to solve and learn from them.
+## Setup
 
+1. Clone the repository.
+2. Create a `.env` file in the project root and add the required variables.
+3. Create a `data` directory with csv data.
+4. In the project root, build and start the container:
 
-# Accomplishments that we're proud of
+```bash
+docker compose up --build
+```
 
-Primarily, we're proud that we were able to (almost) entirely host, build, and design this project entirely on our own. Our service only connects to supabase for user authentication. Everything else was built by us and we are hosting it on our own equipment routed through cloudflare tunnel. This is a huge accomplishment, as we don't need to pay a service to keep our site online.
+OR
 
-We're also proud that we made a working environment that people can actually use and learn from.
+```bash
+docker compose build send-back
+docker compose build send-front
+docker compose up
+```
 
-# What we learned
+If you would like to build and run seperately.
 
-Through this project, we were able to learn a lot about industry-used tools and concepts, like cloudflare for DNS proxying, docker for containerized and secure app deployment, proper git and github usage and documentation, spring for java services, connecting apps via stdin and stdout, and much, much more.
+By default, the frontend is exposed on `http://127.0.0.1:5173`.
 
-# What's next for SEND
+## Architecture
 
-## Learning Modules
+The application flow is:
 
-We have many things planned for the Learning Modules, including:
+`Frontend (React) -> Backend API (Spring Java) -> Execution Engine (OCaml)`
 
-    1. All modules reviewed and, if needed, edited to be more accurate by industry professionals
-    2. Expanding the library of modules and cover more advanced topics
-    3. New modules created entirely by industry professionals
-    4. Support for new external connections
+Nginx routes frontend traffic and proxies `/api` requests to the backend. The backend coordinates with the OCaml execution engine to run strategies and return results to the frontend.
 
-## Sandbox
+## Notes
 
-- Export to pine script!
-    - Pine Script is a scripting language used by TradingView. It is used for stock analysis with live stock data.
-- More derived nodes
-- Integrate AI to allow for personalized feedback on strategies, explanations of strategies, and recommendations.
-- Helpful walkthroughs/tours on first visit
-- Easier to use for beginners
+- Docker Compose is the supported local development path.
+- The backend and database stay on the internal Docker network by default.
+- Plain local runs outside Docker are not supported by default unless the same environment variables are exported manually.
 
-## Derived Nodes "Marketplace"
+## Disclaimer
 
-- Planning to allow users to make their own derived nodes for their own use.
-- Users can then upload a derived node to the marketplace to share what they habe created.
-- Other users can add uploaded derived nodes to their own library to use
+Hackonomics is an educational platform. It does not provide investment advice, and any real-money trading decisions are made at the user's own risk.

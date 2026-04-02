@@ -27,6 +27,19 @@ type t =
       expected_kind : Node.value_kind;
       actual_value : Node.value;
     }
+  | Invalid_multi_input_arity of {
+      node_id : Node_id.t;
+      port_index : int;
+    }
+  | Missing_multi_input_connection of {
+      node_id : Node_id.t;
+      port_index : int;
+    }
+  | Too_many_incoming_edges of {
+      node_id : Node_id.t;
+      port_index : int;
+      actual_count : int;
+    }
   | Cycle_detected of Node_id.t list
 
 let port_ref_to_string port =
@@ -78,6 +91,24 @@ let to_string = function
       ^ Node.value_kind_label expected_kind
       ^ " but got "
       ^ Node.value_label actual_value
+  | Invalid_multi_input_arity { node_id; port_index } ->
+      "Invalid multi-input port on node "
+      ^ Node_id.to_string node_id
+      ^ " port "
+      ^ string_of_int port_index
+      ^ ": a MANY input port must be the node's only input port"
+  | Missing_multi_input_connection { node_id; port_index } ->
+      "Missing input value for multi-input port "
+      ^ Node_id.to_string node_id
+      ^ ":"
+      ^ string_of_int port_index
+  | Too_many_incoming_edges { node_id; port_index; actual_count } ->
+      "Too many incoming edges for node "
+      ^ Node_id.to_string node_id
+      ^ " port "
+      ^ string_of_int port_index
+      ^ ": expected at most 1 but got "
+      ^ string_of_int actual_count
   | Cycle_detected node_ids ->
       "Cycle detected among nodes: "
       ^ String.concat ", " (List.map Node_id.to_string node_ids)

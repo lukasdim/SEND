@@ -99,6 +99,9 @@ export type NodePaletteItem = {
   outputCount: number;
 };
 
+type HandleSide = "left" | "right";
+type HandleVariant = "default" | "multi-input";
+
 type NodeVisual = {
   background: string;
   border: string;
@@ -141,6 +144,77 @@ export const MATH_NODE_TYPES = ["add", "subtract", "multiply", "divide", "negate
 
 export function isMathNodeType(nodeType: string): boolean {
   return (MATH_NODE_TYPES as readonly string[]).includes(nodeType);
+}
+
+const PORT_HANDLE_SIZE = 10;
+const MULTI_INPUT_HANDLE_INSET = 12;
+
+function getHandleVariant(port: NodeIoPort, side: HandleSide): HandleVariant {
+  return side === "left" && port.arity === "MANY" ? "multi-input" : "default";
+}
+
+export function isMultiInputPort(port: NodeIoPort | undefined, side: HandleSide): boolean {
+  return port !== undefined && getHandleVariant(port, side) === "multi-input";
+}
+
+function getHandleWrapperPositionStyle(
+  port: NodeIoPort,
+  index: number,
+  total: number,
+  side: HandleSide
+): CSSProperties {
+  if (getHandleVariant(port, side) === "multi-input") {
+    return {
+      position: "absolute",
+      top: MULTI_INPUT_HANDLE_INSET,
+      bottom: MULTI_INPUT_HANDLE_INSET,
+      zIndex: 3,
+      left: -8,
+      display: "inline-flex",
+      alignItems: "stretch",
+    };
+  }
+
+  return {
+    position: "absolute",
+    top: getHandleTop(index, total),
+    transform: "translateY(-50%)",
+    zIndex: 3,
+    left: side === "left" ? -8 : undefined,
+    right: side === "right" ? -8 : undefined,
+    display: "inline-block",
+  };
+}
+
+export function getPreviewHandleStyle(
+  side: HandleSide,
+  handleColor: string,
+  port?: NodeIoPort
+): CSSProperties {
+  if (isMultiInputPort(port, side)) {
+    return {
+      position: "absolute",
+      [side]: -8,
+      top: MULTI_INPUT_HANDLE_INSET,
+      bottom: MULTI_INPUT_HANDLE_INSET,
+      width: PORT_HANDLE_SIZE,
+      borderRadius: 999,
+      background: handleColor,
+      border: "none",
+    };
+  }
+
+  return {
+    position: "absolute",
+    [side]: -8,
+    top: "50%",
+    transform: "translateY(-50%)",
+    width: PORT_HANDLE_SIZE,
+    height: PORT_HANDLE_SIZE,
+    borderRadius: 999,
+    background: handleColor,
+    border: "none",
+  };
 }
 
 function hasOwnRecordKey(record: Record<string, unknown>, key: string): boolean {
@@ -525,15 +599,13 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
   const renderPortHandle = (port: NodeIoPort, idx: number, side: "left" | "right") => {
     const isInput = side === "left";
     const tooltip = buildPortTooltip(port, isInput, runtimeResult, inlineInputValues);
-    const wrapperPositionStyle: CSSProperties = {
-      position: "absolute",
-      top: getHandleTop(idx, isInput ? inputPorts.length : outputPorts.length),
-      transform: "translateY(-50%)",
-      zIndex: 3,
-      left: isInput ? -8 : undefined,
-      right: isInput ? undefined : -8,
-      display: "inline-block",
-    };
+    const wrapperPositionStyle = getHandleWrapperPositionStyle(
+      port,
+      idx,
+      isInput ? inputPorts.length : outputPorts.length,
+      side
+    );
+    const isMultiInput = isMultiInputPort(port, side);
 
     const tooltipStyle: CSSProperties & { [key: string]: string | undefined } = {
       ["--port-tooltip-border" as string]: visual.handle,
@@ -549,8 +621,8 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
           aria-label={tooltip.aria}
           style={{
             ...NODE_HANDLE_STYLE,
-            width: 10,
-            height: 10,
+            width: PORT_HANDLE_SIZE,
+            height: isMultiInput ? "100%" : PORT_HANDLE_SIZE,
             background:
               data.nodeType === "if" && !isInput && port.index === 0
                 ? "#639922"
@@ -570,6 +642,7 @@ function DynamicNode({ id, data }: NodeProps<NodeData>) {
             right: 0,
             top: 0,
             transform: "none",
+            borderRadius: 999,
           }}
         />
         <span className="port-tooltip" style={tooltipStyle}>

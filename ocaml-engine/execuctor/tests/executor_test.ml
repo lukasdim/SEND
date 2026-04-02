@@ -23,7 +23,9 @@ let spec
     ~executor_key
 
 let port index name value_kind =
-  Node.make_port_spec ~index ~name ~value_kind
+  Node.make_port_spec ~index ~name ~arity:Node.one ~value_kind
+
+let input index value = (index, [ value ])
 
 let data_field_spec ?(required = false) ?default_value name value_kind =
   Node.make_data_field_spec ~name ~value_kind ~required ~default_value
@@ -53,6 +55,15 @@ let add_spec =
     ~display_name:"Add"
     ~inputs:[ port 0 "a" Node.number_kind; port 1 "b" Node.number_kind ]
     ~outputs:[ port 0 "sum" Node.number_kind ]
+    ()
+
+let average_spec =
+  spec
+    ~node_type:"average"
+    ~executor_key:"average"
+    ~display_name:"Average"
+    ~inputs:[ Node.make_port_spec ~index:0 ~name:"values" ~arity:Node.many ~value_kind:Node.number_kind ]
+    ~outputs:[ port 0 "average" Node.number_kind ]
     ()
 
 let subtract_spec =
@@ -242,7 +253,7 @@ let test_arithmetic_executors () =
        (context
           ~node_type:"add"
           ~node_spec:add_spec
-          ~inputs:[ (0, Node.Number_value 1.5); (1, Node.Number_value 2.5) ]
+          ~inputs:[ input 0 (Node.Number_value 1.5); input 1 (Node.Number_value 2.5) ]
           ()));
   expect_output
     [ (0, Node.Number_value 3.0) ]
@@ -250,7 +261,7 @@ let test_arithmetic_executors () =
        (context
           ~node_type:"subtract"
           ~node_spec:subtract_spec
-          ~inputs:[ (0, Node.Number_value 5.0); (1, Node.Number_value 2.0) ]
+          ~inputs:[ input 0 (Node.Number_value 5.0); input 1 (Node.Number_value 2.0) ]
           ()));
   expect_output
     [ (0, Node.Number_value 12.0) ]
@@ -258,7 +269,7 @@ let test_arithmetic_executors () =
        (context
           ~node_type:"multiply"
           ~node_spec:multiply_spec
-          ~inputs:[ (0, Node.Number_value 3.0); (1, Node.Number_value 4.0) ]
+          ~inputs:[ input 0 (Node.Number_value 3.0); input 1 (Node.Number_value 4.0) ]
           ()));
   expect_output
     [ (0, Node.Number_value 2.5) ]
@@ -266,7 +277,7 @@ let test_arithmetic_executors () =
        (context
           ~node_type:"divide"
           ~node_spec:divide_spec
-          ~inputs:[ (0, Node.Number_value 5.0); (1, Node.Number_value 2.0) ]
+          ~inputs:[ input 0 (Node.Number_value 5.0); input 1 (Node.Number_value 2.0) ]
           ()));
   expect_output
     [ (0, Node.Number_value (-3.0)) ]
@@ -274,7 +285,7 @@ let test_arithmetic_executors () =
        (context
           ~node_type:"negate"
           ~node_spec:negate_spec
-          ~inputs:[ (0, Node.Number_value 3.0) ]
+          ~inputs:[ input 0 (Node.Number_value 3.0) ]
           ()))
 
 let test_boolean_and_comparison_executors () =
@@ -284,7 +295,7 @@ let test_boolean_and_comparison_executors () =
        (context
           ~node_type:"and"
           ~node_spec:and_spec
-          ~inputs:[ (0, Node.Bool_value true); (1, Node.Bool_value false) ]
+          ~inputs:[ input 0 (Node.Bool_value true); input 1 (Node.Bool_value false) ]
           ()));
   expect_output
     [ (0, Node.Bool_value true) ]
@@ -292,7 +303,7 @@ let test_boolean_and_comparison_executors () =
        (context
           ~node_type:"or"
           ~node_spec:or_spec
-          ~inputs:[ (0, Node.Bool_value true); (1, Node.Bool_value false) ]
+          ~inputs:[ input 0 (Node.Bool_value true); input 1 (Node.Bool_value false) ]
           ()));
   expect_output
     [ (0, Node.Bool_value false) ]
@@ -300,7 +311,7 @@ let test_boolean_and_comparison_executors () =
        (context
           ~node_type:"not"
           ~node_spec:not_spec
-          ~inputs:[ (0, Node.Bool_value true) ]
+          ~inputs:[ input 0 (Node.Bool_value true) ]
           ()));
   expect_output
     [ (0, Node.Bool_value true) ]
@@ -308,7 +319,7 @@ let test_boolean_and_comparison_executors () =
        (context
           ~node_type:"gt"
           ~node_spec:gt_spec
-          ~inputs:[ (0, Node.Number_value 3.0); (1, Node.Number_value 2.0) ]
+          ~inputs:[ input 0 (Node.Number_value 3.0); input 1 (Node.Number_value 2.0) ]
           ()));
   expect_output
     [ (0, Node.Bool_value true) ]
@@ -316,7 +327,7 @@ let test_boolean_and_comparison_executors () =
        (context
           ~node_type:"gte"
           ~node_spec:gte_spec
-          ~inputs:[ (0, Node.Number_value 3.0); (1, Node.Number_value 3.0) ]
+          ~inputs:[ input 0 (Node.Number_value 3.0); input 1 (Node.Number_value 3.0) ]
           ()));
   expect_output
     [ (0, Node.Bool_value true) ]
@@ -324,7 +335,7 @@ let test_boolean_and_comparison_executors () =
        (context
           ~node_type:"lt"
           ~node_spec:lt_spec
-          ~inputs:[ (0, Node.Number_value 2.0); (1, Node.Number_value 3.0) ]
+          ~inputs:[ input 0 (Node.Number_value 2.0); input 1 (Node.Number_value 3.0) ]
           ()));
   expect_output
     [ (0, Node.Bool_value true) ]
@@ -332,7 +343,7 @@ let test_boolean_and_comparison_executors () =
        (context
           ~node_type:"lte"
           ~node_spec:lte_spec
-          ~inputs:[ (0, Node.Number_value 3.0); (1, Node.Number_value 3.0) ]
+          ~inputs:[ input 0 (Node.Number_value 3.0); input 1 (Node.Number_value 3.0) ]
           ()))
 
 let test_constant_executors () =
@@ -370,7 +381,7 @@ let test_polymorphic_and_conversion_executors () =
        (context
           ~node_type:"eq"
           ~node_spec:eq_spec
-          ~inputs:[ (0, Node.String_value "x"); (1, Node.String_value "x") ]
+          ~inputs:[ input 0 (Node.String_value "x"); input 1 (Node.String_value "x") ]
           ()));
   expect_output
     [ (0, Node.Bool_value true) ]
@@ -378,7 +389,7 @@ let test_polymorphic_and_conversion_executors () =
        (context
           ~node_type:"neq"
           ~node_spec:neq_spec
-          ~inputs:[ (0, Node.String_value "x"); (1, Node.Number_value 1.0) ]
+          ~inputs:[ input 0 (Node.String_value "x"); input 1 (Node.Number_value 1.0) ]
           ()));
   expect_output
     [ (0, Node.String_value "chosen") ]
@@ -386,7 +397,7 @@ let test_polymorphic_and_conversion_executors () =
        (context
           ~node_type:"if"
           ~node_spec:if_spec
-          ~inputs:[ (0, Node.Bool_value true); (1, Node.String_value "chosen"); (2, Node.String_value "other") ]
+          ~inputs:[ input 0 (Node.Bool_value true); input 1 (Node.String_value "chosen"); input 2 (Node.String_value "other") ]
           ()));
   expect_output
     [ (0, Node.Bool_value false) ]
@@ -394,7 +405,7 @@ let test_polymorphic_and_conversion_executors () =
        (context
           ~node_type:"to_bool"
           ~node_spec:to_bool_spec
-          ~inputs:[ (0, Node.Number_value 0.0) ]
+          ~inputs:[ input 0 (Node.Number_value 0.0) ]
           ()));
   expect_output
     [ (0, Node.Number_value 12.5) ]
@@ -402,7 +413,7 @@ let test_polymorphic_and_conversion_executors () =
        (context
           ~node_type:"to_number"
           ~node_spec:to_number_spec
-          ~inputs:[ (0, Node.String_value "12.5") ]
+          ~inputs:[ input 0 (Node.String_value "12.5") ]
           ()));
   expect_output
     [ (0, Node.String_value "true") ]
@@ -410,8 +421,21 @@ let test_polymorphic_and_conversion_executors () =
        (context
           ~node_type:"to_string"
           ~node_spec:to_string_spec
-          ~inputs:[ (0, Node.Bool_value true) ]
+          ~inputs:[ input 0 (Node.Bool_value true) ]
           ()))
+
+let test_average_executor_and_multi_helpers () =
+  expect_output
+    [ (0, Node.Number_value 4.0) ]
+    (Average.executor.run
+       (context
+          ~node_type:"average"
+          ~node_spec:average_spec
+          ~inputs:[ (0, [ Node.Number_value 2.0; Node.Number_value 4.0; Node.Number_value 6.0 ]) ]
+          ()));
+  match Executor.expect_numbers 0 [ (0, [ Node.Number_value 1.0; Node.Number_value 2.5 ]) ] with
+  | Ok [ 1.0; 2.5 ] -> ()
+  | _ -> failwith "expected multi-number helper to return all values"
 
 let test_executor_failures () =
   expect_error
@@ -422,7 +446,7 @@ let test_executor_failures () =
        (context
           ~node_type:"add"
           ~node_spec:add_spec
-          ~inputs:[ (0, Node.Bool_value true); (1, Node.Number_value 2.0) ]
+          ~inputs:[ input 0 (Node.Bool_value true); input 1 (Node.Number_value 2.0) ]
           ()));
   expect_error
     (function
@@ -432,7 +456,17 @@ let test_executor_failures () =
        (context
           ~node_type:"add"
           ~node_spec:add_spec
-          ~inputs:[ (0, Node.Number_value 2.0) ]
+          ~inputs:[ input 0 (Node.Number_value 2.0) ]
+          ()));
+  expect_error
+    (function
+      | Executor.Invalid_input_count { index = 0; expected_count = 1; actual_count = 2 } -> true
+      | _ -> false)
+    (Add.executor.run
+       (context
+          ~node_type:"add"
+          ~node_spec:add_spec
+          ~inputs:[ (0, [ Node.Number_value 2.0; Node.Number_value 3.0 ]); input 1 (Node.Number_value 4.0) ]
           ()));
   expect_error
     (function
@@ -442,7 +476,7 @@ let test_executor_failures () =
        (context
           ~node_type:"divide"
           ~node_spec:divide_spec
-          ~inputs:[ (0, Node.Number_value 5.0); (1, Node.Number_value 0.0) ]
+          ~inputs:[ input 0 (Node.Number_value 5.0); input 1 (Node.Number_value 0.0) ]
           ()));
   expect_error
     (function
@@ -452,12 +486,13 @@ let test_executor_failures () =
        (context
           ~node_type:"to_number"
           ~node_spec:to_number_spec
-          ~inputs:[ (0, Node.String_value "bad") ]
+          ~inputs:[ input 0 (Node.String_value "bad") ]
           ()))
 
 let test_primitive_registry_lookup () =
-  assert_true (List.length Primitive_registry.all = 26) "expected full primitive executor set";
+  assert_true (List.length Primitive_registry.all = 28) "expected full primitive executor set";
   assert_true (Executor_registry.find "add" Primitive_registry.registry <> None) "expected add lookup";
+  assert_true (Executor_registry.find "average" Primitive_registry.registry <> None) "expected average lookup";
   assert_true (Executor_registry.find "subtract" Primitive_registry.registry <> None) "expected subtract lookup";
   assert_true (Executor_registry.find "to_string" Primitive_registry.registry <> None) "expected to_string lookup";
   assert_true (Executor_registry.find "buy" Primitive_registry.registry <> None) "expected buy lookup";
@@ -468,5 +503,6 @@ let run_all () =
   test_boolean_and_comparison_executors ();
   test_constant_executors ();
   test_polymorphic_and_conversion_executors ();
+  test_average_executor_and_multi_helpers ();
   test_executor_failures ();
   test_primitive_registry_lookup ()

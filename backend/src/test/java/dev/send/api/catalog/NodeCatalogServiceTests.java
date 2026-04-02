@@ -53,7 +53,7 @@ class NodeCatalogServiceTests {
     assertEquals(3, nodeCatalogService.registeredSets().size());
     assertTrue(nodeCatalogService.findSpec("add").isPresent());
     assertTrue(nodeCatalogService.findSpec("fetch_price").isPresent());
-    assertTrue(nodeCatalogService.findSpec("average_2").isPresent());
+    assertTrue(nodeCatalogService.findSpec("average").isPresent());
 
     NodeIoCatalogDto catalog = nodeCatalogService.getNodeIoCatalog();
     assertTrue(catalog.nodes().stream().anyMatch(node -> node.nodeType().equals("fetch_price")));
@@ -81,6 +81,11 @@ class NodeCatalogServiceTests {
             .outputs()
             .getFirst()
             .valueTypeClass());
+    NodeIoCatalogDto.NodeIoDefinitionDto average =
+        catalog.nodes().stream().filter(node -> node.nodeType().equals("average")).findFirst().orElseThrow();
+    assertEquals("Average", average.displayName());
+    assertEquals("MANY", average.inputs().getFirst().arity());
+    assertEquals("values", average.inputs().getFirst().name());
     assertEquals(
         "ticker",
         catalog.nodes().stream()

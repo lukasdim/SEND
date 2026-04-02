@@ -7,7 +7,8 @@ let expect_ok = function
       failwith (String.concat " | " (List.map Graph_error.to_string errors))
 
 let node_id value = Node_id.of_string value
-let port index name value_kind = Node.make_port_spec ~index ~name ~value_kind
+let port ?(arity = Node.one) index name value_kind =
+  Node.make_port_spec ~index ~name ~arity ~value_kind
 
 let data_field_spec ?(required = false) ?default_value name value_kind =
   Node.make_data_field_spec ~name ~value_kind ~required ~default_value
@@ -65,6 +66,13 @@ let base_specs =
       ~display_name:"Add"
       ~inputs:[ port 0 "a" Node.number_kind; port 1 "b" Node.number_kind ]
       ~outputs:[ port 0 "sum" Node.number_kind ]
+      ~data_fields:[];
+    spec
+      "average"
+      "average"
+      ~display_name:"Average"
+      ~inputs:[ port ~arity:Node.many 0 "values" Node.number_kind ]
+      ~outputs:[ port 0 "average" Node.number_kind ]
       ~data_fields:[];
   ]
 
@@ -268,6 +276,84 @@ let test_cycle_detection () =
       assert_true (ids = [ "a"; "b" ]) "unexpected cycle members"
   | _ -> failwith "expected cycle detection"
 
+let test_single_input_port_rejects_multiple_edges () =
+  let graph =
+    Graph.create
+      ~node_specs:base_specs
+      ~nodes:[ node "a" "const_number"; node "b" "const_number"; node "c" "add" ]
+      ~edges:
+        [
+          edge ~source_node:"a" ~source_port:0 ~target_node:"c" ~target_port:0;
+          edge ~source_node:"b" ~source_port:0 ~target_node:"c" ~target_port:0;
+        ]
+      ()
+  in
+  match Graph.validate graph with
+  | Error [ Graph_error.Too_many_incoming_edges { node_id; port_index = 0; actual_count = 2 } ] ->
+      assert_true (Node_id.to_string node_id = "c") "wrong node for incoming edge count"
+  | _ -> failwith "expected too many incoming edges error"
+
+let test_many_input_port_accepts_multiple_edges () =
+  let graph =
+    Graph.create
+      ~node_specs:base_specs
+      ~nodes:[ node "a" "const_number"; node "b" "const_number"; node "avg" "average" ]
+      ~edges:
+        [
+          edge ~source_node:"a" ~source_port:0 ~target_node:"avg" ~target_port:0;
+          edge ~source_node:"b" ~source_port:0 ~target_node:"avg" ~target_port:0;
+        ]
+      ()
+  in
+  expect_ok (Graph.validate graph)
+
+let test_many_input_port_must_be_only_input () =
+  let invalid_spec =
+    spec
+      "invalid_many"
+      "invalid_many"
+      ~display_name:"Invalid Many"
+      ~inputs:[ port ~arity:Node.many 0 "values" Node.number_kind; port 1 "other" Node.number_kind ]
+      ~outputs:[ port 0 "result" Node.number_kind ]
+      ~data_fields:[]
+  in
+  let graph =
+    Graph.create
+      ~node_specs:(invalid_spec :: base_specs)
+      ~nodes:[ node "bad" "invalid_many" ]
+      ~edges:[]
+      ()
+  in
+  match Graph.validate graph with
+  | Error [ Graph_error.Invalid_multi_input_arity { node_id; port_index = 0 } ] ->
+      assert_true (Node_id.to_string node_id = "bad") "wrong node for invalid MANY port"
+  | _ -> failwith "expected invalid MANY input arity error"
+
+let test_many_input_port_requires_connection () =
+  let graph =
+    Graph.create
+      ~node_specs:base_specs
+      ~nodes:[ node "avg" "average" ]
+      ~edges:[]
+      ()
+  in
+  match Graph.validate graph with
+  | Error [ Graph_error.Missing_multi_input_connection { node_id; port_index = 0 } ] ->
+      assert_true (Node_id.to_string node_id = "avg") "wrong node for missing MANY input"
+  | _ -> failwith "expected missing MANY input connection error"
+
+let test_many_input_port_type_mismatch_fail () =
+  let graph =
+    Graph.create
+      ~node_specs:base_specs
+      ~nodes:[ node "a" "const_bool"; node "avg" "average" ]
+      ~edges:[ edge ~source_node:"a" ~source_port:0 ~target_node:"avg" ~target_port:0 ]
+      ()
+  in
+  match Graph.validate graph with
+  | Error [ Graph_error.Incompatible_edge_types { source_kind = Node.Bool_kind; target_kind = Node.Number_kind; _ } ] -> ()
+  | _ -> failwith "expected incompatible edge types error for MANY port"
+
 let run_all () =
   test_port_specs_preserved ();
   test_validate_unique_nodes_and_types ();
@@ -281,4 +367,9 @@ let run_all () =
   test_state_type_validation ();
   test_initial_state_validation ();
   test_topological_sort ();
-  test_cycle_detection ()
+  test_cycle_detection ();
+  test_single_input_port_rejects_multiple_edges ();
+  test_many_input_port_accepts_multiple_edges ();
+  test_many_input_port_must_be_only_input ();
+  test_many_input_port_requires_connection ();
+  test_many_input_port_type_mismatch_fail ()

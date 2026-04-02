@@ -35,6 +35,11 @@ let decode_data_type = function
   | "Value" -> Ok Node.any_kind
   | value_type -> Error (Spec_error.Unknown_value_type value_type)
 
+let decode_port_arity = function
+  | "ONE" -> Ok Node.one
+  | "MANY" -> Ok Node.many
+  | arity -> Error (Spec_error.Unknown_port_arity arity)
+
 let decode_port_spec = function
   | `Assoc fields ->
       let* index =
@@ -44,9 +49,11 @@ let decode_port_spec = function
         | None -> Error (Spec_error.Missing_field "index")
       in
       let* name = get_string_field fields "name" in
+      let* arity = get_string_field fields "arity" in
+      let* arity = decode_port_arity arity in
       let* value_type = get_string_field fields "valueType" in
       let* value_kind = decode_data_type value_type in
-      Ok (Node.make_port_spec ~index ~name ~value_kind)
+      Ok (Node.make_port_spec ~index ~name ~arity ~value_kind)
   | _ -> Error (Spec_error.Invalid_field_type "portSpec")
 
 let decode_data_field_spec = function

@@ -14,12 +14,12 @@ let primitive_spec node_type display_name description inputs outputs data_fields
       ("executorKey", `String executor_key);
     ]
 
-let port index name value_type =
+let port ?(arity = "ONE") index name value_type =
   `Assoc
     [
       ("index", `Int index);
       ("name", `String name);
-      ("arity", `String "ONE");
+      ("arity", `String arity);
       ("valueType", `String value_type);
     ]
 
@@ -99,6 +99,93 @@ let execution_payload =
           ] );
     ]
 
+let average_payload =
+  `Assoc
+    [
+      ( "graph",
+        `Assoc
+          [
+            ( "nodes",
+              `List
+                [
+                  `Assoc
+                    [
+                      ("id", `String "a");
+                      ("nodeType", `String "const_number");
+                      ("dataFields", `List [ data_field "value" (`Int 2) ]);
+                    ];
+                  `Assoc
+                    [
+                      ("id", `String "b");
+                      ("nodeType", `String "const_number");
+                      ("dataFields", `List [ data_field "value" (`Int 4) ]);
+                    ];
+                  `Assoc
+                    [
+                      ("id", `String "c");
+                      ("nodeType", `String "const_number");
+                      ("dataFields", `List [ data_field "value" (`Int 6) ]);
+                    ];
+                  `Assoc
+                    [ ("id", `String "avg"); ("nodeType", `String "average"); ("dataFields", `List []) ];
+                ] );
+            ( "edges",
+              `List
+                [
+                  `Assoc
+                    [
+                      ("id", `String "e-1");
+                      ("sourceNode", `String "a");
+                      ("sourcePort", `Int 0);
+                      ("targetNode", `String "avg");
+                      ("targetPort", `Int 0);
+                    ];
+                  `Assoc
+                    [
+                      ("id", `String "e-2");
+                      ("sourceNode", `String "b");
+                      ("sourcePort", `Int 0);
+                      ("targetNode", `String "avg");
+                      ("targetPort", `Int 0);
+                    ];
+                  `Assoc
+                    [
+                      ("id", `String "e-3");
+                      ("sourceNode", `String "c");
+                      ("sourcePort", `Int 0);
+                      ("targetNode", `String "avg");
+                      ("targetPort", `Int 0);
+                    ];
+                ] );
+          ] );
+      ( "nodeSpecs",
+        `List
+          [
+            primitive_spec
+              "const_number"
+              "Constant Number"
+              "Outputs a configured numeric constant."
+              []
+              [ port 0 "value" "NumVal" ]
+              [ `Assoc
+                  [
+                    ("name", `String "value");
+                    ("valueType", `String "NumVal");
+                    ("required", `Bool true);
+                    ("defaultValue", `Int 0);
+                  ] ]
+              "const_number";
+            primitive_spec
+              "average"
+              "Average"
+              "Averages connected numbers."
+              [ port ~arity:"MANY" 0 "values" "NumVal" ]
+              [ port 0 "average" "NumVal" ]
+              []
+              "average";
+          ] );
+    ]
+
 let test_handle_validate_graph () =
   let request =
     {
@@ -126,6 +213,20 @@ let test_handle_execute_graph () =
         (Yojson.Safe.Util.member "c" result |> Yojson.Safe.Util.member "sum" = `Int 5)
         "expected add-node execution output"
   | _ -> failwith "expected execute_graph success response"
+
+let test_handle_execute_graph_many_input () =
+  let request =
+    {
+      Worker_protocol.command = Worker_protocol.Execute_graph;
+      payload = Some average_payload;
+    }
+  in
+  match Worker_handler.handle_request request with
+  | Worker_protocol.Success { command = Worker_protocol.Execute_graph; result } ->
+      assert_true
+        (Yojson.Safe.Util.member "avg" result |> Yojson.Safe.Util.member "average" = `Int 4)
+        "expected average-node execution output"
+  | _ -> failwith "expected execute_graph success response for MANY input"
 
 let test_handle_execute_graph_protocol_error () =
   let request =
@@ -156,5 +257,6 @@ let test_handle_simulate_graph_protocol_error () =
 let run_all () =
   test_handle_validate_graph ();
   test_handle_execute_graph ();
+  test_handle_execute_graph_many_input ();
   test_handle_execute_graph_protocol_error ();
   test_handle_simulate_graph_protocol_error ()

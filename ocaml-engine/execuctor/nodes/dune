@@ -2,7 +2,8 @@
  (name hackonomics_nodes)
  (wrapped false)
  (modules
-  add
+ add
+  average
   subtract
   multiply
   divide

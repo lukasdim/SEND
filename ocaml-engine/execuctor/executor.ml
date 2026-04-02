@@ -1,4 +1,4 @@
-type input = (int * Node.value) list
+type input = (int * Node.value list) list
 type output = (int * Node.value) list
 
 type trade_result = {
@@ -12,6 +12,11 @@ type trade_result = {
 
 type run_error =
   | Missing_input of int
+  | Invalid_input_count of {
+      index : int;
+      expected_count : int;
+      actual_count : int;
+    }
   | Invalid_input_type of {
       index : int;
       expected : Node.value;
@@ -58,47 +63,94 @@ type t = {
 let find_input (inputs : input) index =
   List.assoc_opt index inputs
 
-let expect_value index inputs =
+let expect_values index inputs =
   match find_input inputs index with
-  | Some value -> Ok value
+  | Some values -> Ok values
   | None -> Error (Missing_input index)
 
-let expect_number index inputs =
-  match expect_value index inputs with
-  | Ok (Node.Number_value value) -> Ok value
-  | Ok actual ->
+let expect_value index inputs =
+  match expect_values index inputs with
+  | Ok [ value ] -> Ok value
+  | Ok values ->
       Error
-        (Invalid_input_type
+        (Invalid_input_count
            {
              index;
-             expected = Node.number;
-             actual;
+             expected_count = 1;
+             actual_count = List.length values;
            })
   | Error _ as error -> error
+
+let expect_typed_values index inputs ~expected_value extract =
+  let rec loop acc = function
+    | [] -> Ok (List.rev acc)
+    | value :: remaining -> (
+        match extract value with
+        | Some decoded -> loop (decoded :: acc) remaining
+        | None ->
+            Error
+              (Invalid_input_type
+                 {
+                   index;
+                   expected = expected_value;
+                   actual = value;
+                 }))
+  in
+  match expect_values index inputs with
+  | Ok values -> loop [] values
+  | Error _ as error -> error
+
+let expect_numbers index inputs =
+  expect_typed_values index inputs ~expected_value:Node.number (function
+    | Node.Number_value value -> Some value
+    | _ -> None)
+
+let expect_number index inputs =
+  match expect_numbers index inputs with
+  | Ok [ value ] -> Ok value
+  | Ok values ->
+      Error
+        (Invalid_input_count
+           {
+             index;
+             expected_count = 1;
+             actual_count = List.length values;
+           })
+  | Error _ as error -> error
+
+let expect_bools index inputs =
+  expect_typed_values index inputs ~expected_value:Node.bool (function
+    | Node.Bool_value value -> Some value
+    | _ -> None)
 
 let expect_bool index inputs =
-  match expect_value index inputs with
-  | Ok (Node.Bool_value value) -> Ok value
-  | Ok actual ->
+  match expect_bools index inputs with
+  | Ok [ value ] -> Ok value
+  | Ok values ->
       Error
-        (Invalid_input_type
+        (Invalid_input_count
            {
              index;
-             expected = Node.bool;
-             actual;
+             expected_count = 1;
+             actual_count = List.length values;
            })
   | Error _ as error -> error
 
+let expect_strings index inputs =
+  expect_typed_values index inputs ~expected_value:Node.string (function
+    | Node.String_value value -> Some value
+    | _ -> None)
+
 let expect_string index inputs =
-  match expect_value index inputs with
-  | Ok (Node.String_value value) -> Ok value
-  | Ok actual ->
+  match expect_strings index inputs with
+  | Ok [ value ] -> Ok value
+  | Ok values ->
       Error
-        (Invalid_input_type
+        (Invalid_input_count
            {
              index;
-             expected = Node.string;
-             actual;
+             expected_count = 1;
+             actual_count = List.length values;
            })
   | Error _ as error -> error
 
@@ -182,6 +234,13 @@ let single_output index value =
 
 let run_error_to_string = function
   | Missing_input index -> "Missing input at index " ^ string_of_int index
+  | Invalid_input_count { index; expected_count; actual_count } ->
+      "Invalid input count at index "
+      ^ string_of_int index
+      ^ ": expected "
+      ^ string_of_int expected_count
+      ^ " but got "
+      ^ string_of_int actual_count
   | Invalid_input_type { index; expected; actual } ->
       "Invalid input type at index "
       ^ string_of_int index

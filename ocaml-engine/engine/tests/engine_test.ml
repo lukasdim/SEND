@@ -9,7 +9,7 @@ let expect_ok = function
 let node_id value = Node_id.of_string value
 
 let port index name value_kind =
-  Node.make_port_spec ~index ~name ~value_kind
+  Node.make_port_spec ~index ~name ~arity:Node.one ~value_kind
 
 let data_field_spec ?(required = false) ?default_value name value_kind =
   Node.make_data_field_spec ~name ~value_kind ~required ~default_value
@@ -78,8 +78,17 @@ let to_number_spec =
     ~outputs:[ port 0 "result" Node.number_kind ]
     ()
 
+let average_spec =
+  spec
+    ~node_type:"average"
+    ~executor_key:"average"
+    ~display_name:"Average"
+    ~inputs:[ Node.make_port_spec ~index:0 ~name:"values" ~arity:Node.many ~value_kind:Node.number_kind ]
+    ~outputs:[ port 0 "result" Node.number_kind ]
+    ()
+
 let graph_specs =
-  [ const_number_spec; const_bool_spec; add_spec; if_spec; to_number_spec ]
+  [ const_number_spec; const_bool_spec; add_spec; if_spec; to_number_spec; average_spec ]
 
 let primitive_registry = Primitive_registry.registry
 
@@ -227,9 +236,53 @@ let test_missing_executor () =
   | Error [ Engine_error.Missing_executor { executor_key = "add"; _ } ] -> ()
   | _ -> failwith "expected missing executor error"
 
+let test_average_graph () =
+  let graph =
+    Graph.create
+      ~node_specs:graph_specs
+      ~nodes:
+        [
+          Node.make
+            ~id:(node_id "a")
+            ~node_type:"const_number"
+            ~data_fields:[ Node.make_data_field ~name:"value" ~value:(Node.Number_value 2.0) ]
+            ();
+          Node.make
+            ~id:(node_id "b")
+            ~node_type:"const_number"
+            ~data_fields:[ Node.make_data_field ~name:"value" ~value:(Node.Number_value 4.0) ]
+            ();
+          Node.make
+            ~id:(node_id "c")
+            ~node_type:"const_number"
+            ~data_fields:[ Node.make_data_field ~name:"value" ~value:(Node.Number_value 6.0) ]
+            ();
+          Node.make ~id:(node_id "avg") ~node_type:"average" ();
+        ]
+      ~edges:
+        [
+          Node.make_edge
+            ~source:(Node.make_port_ref ~node_id:(node_id "a") ~port_index:0)
+            ~target:(Node.make_port_ref ~node_id:(node_id "avg") ~port_index:0);
+          Node.make_edge
+            ~source:(Node.make_port_ref ~node_id:(node_id "b") ~port_index:0)
+            ~target:(Node.make_port_ref ~node_id:(node_id "avg") ~port_index:0);
+          Node.make_edge
+            ~source:(Node.make_port_ref ~node_id:(node_id "c") ~port_index:0)
+            ~target:(Node.make_port_ref ~node_id:(node_id "avg") ~port_index:0);
+        ]
+      ()
+  in
+  let executed_graph = Engine.execute ~simulation:None ~graph ~registry:primitive_registry |> expect_ok in
+  let output_port = Node.make_port_ref ~node_id:(node_id "avg") ~port_index:0 in
+  assert_true
+    (Graph.port_value executed_graph output_port = Some (Node.Number_value 4.0))
+    "expected average node output"
+
 let run_all () =
   test_execute_graph ();
   test_if_graph ();
   test_const_default_fallback ();
   test_conversion_graph ();
-  test_missing_executor ()
+  test_missing_executor ();
+  test_average_graph ()

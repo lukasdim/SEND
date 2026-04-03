@@ -45,10 +45,14 @@ public class AnalyticsProxyService {
         return analyticsRestTemplate.execute(
                 analyticsProperties.upstreamScriptUri(),
                 HttpMethod.GET,
-                request -> request.getHeaders().setAccept(List.of(
-                        MediaType.valueOf("application/javascript"),
-                        MediaType.TEXT_PLAIN,
-                        MediaType.ALL)),
+                request -> {
+                    HttpHeaders headers = request.getHeaders();
+                    headers.setConnection("close");
+                    headers.setAccept(List.of(
+                            MediaType.valueOf("application/javascript"),
+                            MediaType.TEXT_PLAIN,
+                            MediaType.ALL));
+                },
                 response -> extractResponse(response, SCRIPT_RESPONSE_HEADERS));
     }
 
@@ -62,6 +66,7 @@ public class AnalyticsProxyService {
                 HttpMethod.POST,
                 request -> {
                     HttpHeaders headers = request.getHeaders();
+                    headers.setConnection("close");
                     if (contentType != null && !contentType.isBlank()) {
                         headers.set(HttpHeaders.CONTENT_TYPE, contentType);
                     }

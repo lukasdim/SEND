@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import PageShell from "./PageShell";
 import {
@@ -13,12 +13,12 @@ import {
 } from "../components/nodes/base/nodeCardStyle";
 import type { LectureCatalogPath, LectureCatalogResponse } from "../features/lectures/types";
 import { fetchLectureCatalog } from "../services/lectureApi";
+import { DEFAULT_SEO_IMAGE_PATH } from "../seo/meta";
 
 export default function Library() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [catalog, setCatalog] = useState<LectureCatalogResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedPathSlug, setSelectedPathSlug] = useState("logic");
 
   useEffect(() => {
     let isActive = true;
@@ -38,25 +38,22 @@ export default function Library() {
     };
   }, []);
 
-  useEffect(() => {
+  const selectedPathSlug = useMemo(() => {
     if (!catalog) {
-      return;
+      return "logic";
     }
 
     const requestedPathSlug = searchParams.get("path")?.trim();
     const fallbackPathSlug = catalog.paths.find((path) => path.slug === "logic")?.slug ?? catalog.paths[0]?.slug ?? "logic";
-    const nextPathSlug = catalog.paths.some((path) => path.slug === requestedPathSlug)
+    return catalog.paths.some((path) => path.slug === requestedPathSlug)
       ? (requestedPathSlug as string)
       : fallbackPathSlug;
-
-    setSelectedPathSlug((current) => (current === nextPathSlug ? current : nextPathSlug));
   }, [catalog, searchParams]);
 
   const selectedPath: LectureCatalogPath | null =
     catalog?.paths.find((path) => path.slug === selectedPathSlug) ?? catalog?.paths[0] ?? null;
 
   const handleSelectPath = (pathSlug: string) => {
-    setSelectedPathSlug(pathSlug);
     setSearchParams(pathSlug === "logic" ? {} : { path: pathSlug });
   };
 
@@ -66,6 +63,14 @@ export default function Library() {
       title="Choose a path"
       //description="Logic is shown first by default. Switch between Logic and Economics, then open a guided lecture from the categories inside that path."
       maxWidth={1320}
+      seo={{
+        title: "Trading Logic and Economics Lessons | SEND",
+        description:
+          "Browse SEND lessons on trading logic, guided graph building, and beginner economics topics before you practice in the strategy sandbox.",
+        canonicalPath: "/library",
+        imagePath: DEFAULT_SEO_IMAGE_PATH,
+        ogType: "website",
+      }}
     >
       {error && (
         <section

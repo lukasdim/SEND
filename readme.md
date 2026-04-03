@@ -76,6 +76,7 @@ Set the following variables in your `.env` file:
 - `SEND_DB_PASSWORD`
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
+- `VITE_SITE_URL` (recommended for SEO metadata and canonical URLs)
 - `APP_AUTH_SUPABASE_ISSUER_URI`
 - `APP_AUTH_SUPABASE_JWK_SET_URI` or `APP_AUTH_SUPABASE_JWT_SECRET`
 - `APP_LECTURES_PROGRESS_COOKIE_SECRET`
@@ -92,6 +93,7 @@ Notes:
 - If Umami is not configured and you don't need it, leave those variables blank.
 - If you use Umami, set `COLLECT_API_ENDPOINT=/api/analytics/collect` in environment variables for that container
 - In Docker Compose, `VITE_API_URL` should usually be left empty because the frontend uses the bundled Nginx proxy.
+- `VITE_SITE_URL` should be set to the public site origin, for example `https://sendsys.io`, so the frontend can generate correct canonical and social image URLs.
 
 ## Setup
 

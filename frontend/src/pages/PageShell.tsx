@@ -12,6 +12,7 @@ import {
   UI_TEXT_SECONDARY,
   withAlpha,
 } from "../components/nodes/base/nodeCardStyle";
+import { DEFAULT_SEO_IMAGE_PATH, DEFAULT_SITE_DESCRIPTION, type SeoMeta, useSeoMeta } from "../seo/meta";
 
 type PageShellProps = {
   title: string;
@@ -19,6 +20,7 @@ type PageShellProps = {
   description?: string;
   children: React.ReactNode;
   maxWidth?: number;
+  seo?: SeoMeta;
 };
 
 const navItems = [
@@ -27,8 +29,17 @@ const navItems = [
   { to: "/sandbox", label: "Sandbox" },
 ];
 
-export default function PageShell({ title, eyebrow, description, children, maxWidth = 1120 }: PageShellProps) {
+export default function PageShell({ title, eyebrow, description, children, maxWidth = 1120, seo }: PageShellProps) {
   const location = useLocation();
+  const resolvedSeo: SeoMeta = seo ?? {
+    title: `${title} | SEND`,
+    description: description ?? DEFAULT_SITE_DESCRIPTION,
+    canonicalPath: `${location.pathname}${location.search}`,
+    imagePath: DEFAULT_SEO_IMAGE_PATH,
+    ogType: "website",
+  };
+
+  useSeoMeta(resolvedSeo);
 
   return (
     <div

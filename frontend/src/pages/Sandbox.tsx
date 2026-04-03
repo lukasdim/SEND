@@ -50,6 +50,7 @@ import {
   SANDBOX_NODE_WIDTH,
   SANDBOX_NOTIFICATION_TIMEOUT_MS,
 } from "../config/sandboxConfig";
+import { DEFAULT_SEO_IMAGE_PATH, useSeoMeta } from "../seo/meta";
 import {
   createStoredStrategy,
   fetchStoredStrategy,
@@ -2380,6 +2381,14 @@ function ReplayTimeline({
 function SandboxInner() {
   const { fitView, getZoom, screenToFlowPosition, setCenter } = useReactFlow();
   const location = useLocation();
+  useSeoMeta({
+    title: "Practice Trading Logic in the Strategy Sandbox | SEND",
+    description:
+      "Open the SEND strategy sandbox to build visual trading logic, inspect graph behavior, and practice with historical market data.",
+    canonicalPath: location.pathname,
+    imagePath: DEFAULT_SEO_IMAGE_PATH,
+    ogType: "website",
+  });
   const [nodeRegistry, setNodeRegistry] = useState(() => createEmptyNodeRegistry());
   const [isNodeCatalogLoading, setIsNodeCatalogLoading] = useState(true);
   const [activeIssues, setActiveIssues] = useState<SandboxIssue[]>([]);
@@ -3177,7 +3186,6 @@ function SandboxInner() {
     edges,
     fetchStrategies,
     nodes,
-    nodes.length,
     notifyTransientBanner,
   ]);
 

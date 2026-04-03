@@ -1,28 +1,12 @@
 import {
-  createContext,
-  useContext,
   useEffect,
   useMemo,
   useState,
   type PropsWithChildren,
 } from "react";
 import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
+import { AuthContext, type AuthContextValue } from "./auth-context";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
-
-type AuthContextValue = {
-  isConfigured: boolean;
-  isLoading: boolean;
-  isRecoveryMode: boolean;
-  session: Session | null;
-  user: User | null;
-  signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<string | null>;
-  signOut: () => Promise<void>;
-  requestPasswordReset: (email: string) => Promise<void>;
-  updatePassword: (password: string) => Promise<void>;
-};
-
-const AuthContext = createContext<AuthContextValue | null>(null);
 
 function isRecoveryHash(hash: string): boolean {
   const normalized = hash.startsWith("#") ? hash.slice(1) : hash;
@@ -40,9 +24,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     if (!supabase) {
-      setIsLoading(false);
-      setSession(null);
-      setUser(null);
       return;
     }
 
@@ -129,12 +110,4 @@ export function AuthProvider({ children }: PropsWithChildren) {
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-export function useAuth() {
-  const value = useContext(AuthContext);
-  if (!value) {
-    throw new Error("useAuth must be used within an AuthProvider.");
-  }
-  return value;
 }

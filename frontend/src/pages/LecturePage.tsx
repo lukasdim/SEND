@@ -5,6 +5,7 @@ import LectureMiniSandbox from "../components/lectures/LectureMiniSandbox";
 import MarkdownContent from "../components/lectures/MarkdownContent";
 import { slugifyMarkdownHeading } from "../components/lectures/markdown-utils";
 import type { LectureDetailResponse, LectureProgress } from "../features/lectures/types";
+import { DEFAULT_SEO_IMAGE_PATH, useSeoMeta } from "../seo/meta";
 import { fetchLectureBySlug, verifyLectureCheckpoint } from "../services/lectureApi";
 import "./LecturePage.css";
 
@@ -40,6 +41,19 @@ export default function LecturePage() {
   const [isVerifyingCheckpoint, setIsVerifyingCheckpoint] = useState(false);
   const [activeAnchorId, setActiveAnchorId] = useState<string | null>(null);
   const [recentlyUnlockedIndex, setRecentlyUnlockedIndex] = useState<number | null>(null);
+
+  useSeoMeta({
+    title: lectureDetail ? `${lectureDetail.title} | SEND` : "Trading Lesson | SEND",
+    description:
+      lectureDetail?.summary ??
+      "Follow a guided SEND lesson to learn trading logic, graph-building concepts, and beginner financial education topics.",
+    canonicalPath:
+      pathSlug && categorySlug && lectureSlug
+        ? `/library/${pathSlug}/${categorySlug}/${lectureSlug}`
+        : "/library",
+    imagePath: DEFAULT_SEO_IMAGE_PATH,
+    ogType: "article",
+  });
 
   useEffect(() => {
     if (!pathSlug || !categorySlug || !lectureSlug) {

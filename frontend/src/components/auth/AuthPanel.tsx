@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AUTH_PROVIDER_CONFIG } from "../../auth/providerConfig";
-import { useAuth } from "../../auth/AuthContext";
+import { useAuth } from "../../auth/useAuth";
 
 type AuthMode = "sign-in" | "sign-up" | "reset" | "update-password";
 

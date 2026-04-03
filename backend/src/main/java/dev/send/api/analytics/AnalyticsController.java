@@ -2,6 +2,8 @@ package dev.send.api.analytics;
 
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -19,6 +21,8 @@ import jakarta.servlet.http.HttpServletRequest;
 @RestController
 @RequestMapping("/api/analytics")
 public class AnalyticsController {
+    private static final Logger log = LoggerFactory.getLogger(AnalyticsController.class);
+
     private final AnalyticsProxyService analyticsProxyService;
     private final ClientAddressResolver clientAddressResolver;
 
@@ -61,6 +65,7 @@ public class AnalyticsController {
     @ExceptionHandler(RestClientException.class)
     public ResponseEntity<ApiErrorDto> handleAnalyticsProxyError(RestClientException exception) {
         String message = exception.getMessage();
+        log.warn("Umami analytics proxy request failed: {}", message, exception);
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(new ApiErrorDto(
                         "analytics_proxy_failed",

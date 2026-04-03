@@ -41,8 +41,9 @@ function App() {
         const scriptUrl = config.scriptUrl?.trim() ?? "";
         const collectUrl = config.collectUrl?.trim() ?? "";
         const websiteId = config.websiteId?.trim() ?? "";
+        const hostUrl = collectUrl ? new URL(collectUrl, window.location.origin).origin : "";
 
-        if (!scriptUrl || !collectUrl || !websiteId) {
+        if (!scriptUrl || !collectUrl || !websiteId || !hostUrl) {
           throw new Error("analytics config response was missing required fields");
         }
 
@@ -55,10 +56,12 @@ function App() {
         const script = document.createElement("script");
         script.defer = true;
         script.src = scriptUrl;
+        script.dataset.hostUrl = hostUrl;
         script.dataset.websiteId = websiteId;
         script.dataset.umamiAnalytics = "true";
         script.addEventListener("load", () => {
           console.info(`${UMAMI_LOG_PREFIX} analytics script loaded successfully`, {
+            hostUrl,
             scriptUrl,
             collectUrl,
             websiteId,
@@ -66,6 +69,7 @@ function App() {
         });
         script.addEventListener("error", () => {
           console.error(`${UMAMI_LOG_PREFIX} failed to load analytics script`, {
+            hostUrl,
             scriptUrl,
             collectUrl,
             websiteId,
@@ -73,6 +77,7 @@ function App() {
         });
 
         console.info(`${UMAMI_LOG_PREFIX} injecting analytics script`, {
+          hostUrl,
           scriptUrl,
           collectUrl,
           websiteId,

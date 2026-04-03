@@ -9,9 +9,14 @@ type value_kind =
   | String_kind
   | Any_kind
 
+type port_arity =
+  | One
+  | Many
+
 type port_spec = {
   index : int;
   name : string;
+  arity : port_arity;
   value_kind : value_kind;
 }
 
@@ -56,6 +61,7 @@ type edge = {
 
 val value_label : value -> string
 val value_kind_label : value_kind -> string
+val port_arity_label : port_arity -> string
 val same_value_kind : value -> value -> bool
 val value_kind_of_value : value -> value_kind
 val kind_matches_value : value_kind -> value -> bool
@@ -70,7 +76,9 @@ val number_kind : value_kind
 val bool_kind : value_kind
 val string_kind : value_kind
 val any_kind : value_kind
-val make_port_spec : index:int -> name:string -> value_kind:value_kind -> port_spec
+val one : port_arity
+val many : port_arity
+val make_port_spec : index:int -> name:string -> arity:port_arity -> value_kind:value_kind -> port_spec
 val make_data_field_spec :
   name:string ->
   value_kind:value_kind ->

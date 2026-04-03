@@ -9,9 +9,14 @@ type value_kind =
   | String_kind
   | Any_kind
 
+type port_arity =
+  | One
+  | Many
+
 type port_spec = {
   index : int;
   name : string;
+  arity : port_arity;
   value_kind : value_kind;
 }
 
@@ -65,6 +70,10 @@ let value_kind_label = function
   | String_kind -> "string"
   | Any_kind -> "value"
 
+let port_arity_label = function
+  | One -> "ONE"
+  | Many -> "MANY"
+
 let same_value_kind left right =
   match (left, right) with
   | Number_value _, Number_value _ -> true
@@ -112,8 +121,11 @@ let number_kind = Number_kind
 let bool_kind = Bool_kind
 let string_kind = String_kind
 let any_kind = Any_kind
+let one = One
+let many = Many
 let normalize_number value = Number_value value
-let make_port_spec ~index ~name ~value_kind : port_spec = { index; name; value_kind }
+let make_port_spec ~index ~name ~arity ~value_kind : port_spec =
+  { index; name; arity; value_kind }
 let make_data_field_spec ~name ~value_kind ~required ~default_value : data_field_spec =
   { name; value_kind; required; default_value }
 

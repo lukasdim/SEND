@@ -64,6 +64,8 @@ services:
       args:
         VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:?Set VITE_SUPABASE_URL before starting docker compose}
         VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:?Set VITE_SUPABASE_ANON_KEY before starting docker compose}
+        VITE_UMAMI_ANALYTICS_SCRIPT_URI: ${VITE_UMAMI_ANALYTICS_SCRIPT_URI:-}
+        VITE_UMAMI_ANALYTICS_WEBSITE_ID: ${VITE_UMAMI_ANALYTICS_WEBSITE_ID:-}
     ports:
       - "127.0.0.1:5173:80"
     depends_on:

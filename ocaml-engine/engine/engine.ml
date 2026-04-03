@@ -1,6 +1,6 @@
-let source_port_for_input graph node_id port_index =
+let source_ports_for_input graph node_id port_index =
   Graph.edges graph
-  |> List.find_map (fun (edge : Node.edge) ->
+  |> List.filter_map (fun (edge : Node.edge) ->
          if Node_id.compare edge.target.node_id node_id = 0 && edge.target.port_index = port_index then
            Some edge.source
          else
@@ -16,8 +16,8 @@ let collect_inputs graph node spec =
     | [] -> Ok (List.rev acc)
     | (port : Node.port_spec) :: remaining ->
         begin
-          match source_port_for_input graph node.Node.id port.index with
-          | None ->
+          match source_ports_for_input graph node.Node.id port.index with
+          | [] ->
               Error
                 [
                   Engine_error.Missing_input_value
@@ -26,18 +26,25 @@ let collect_inputs graph node spec =
                       port_index = port.index;
                     };
                 ]
-          | Some source_port -> (
-              match Graph.port_value graph source_port with
-              | Some value -> loop ((port.index, value) :: acc) remaining
-              | None ->
-                  Error
-                    [
-                      Engine_error.Missing_input_value
-                        {
-                          node_id = node.id;
-                          port_index = port.index;
-                        };
-                    ])
+          | source_ports -> (
+              let rec collect_values collected = function
+                | [] -> Ok (List.rev collected)
+                | source_port :: remaining -> (
+                    match Graph.port_value graph source_port with
+                    | Some value -> collect_values (value :: collected) remaining
+                    | None ->
+                        Error
+                          [
+                            Engine_error.Missing_input_value
+                              {
+                                node_id = node.id;
+                                port_index = port.index;
+                              };
+                          ])
+              in
+              match collect_values [] source_ports with
+              | Ok values -> loop ((port.index, values) :: acc) remaining
+              | Error _ as error -> error)
         end
   in
   loop [] spec.Node.input_ports

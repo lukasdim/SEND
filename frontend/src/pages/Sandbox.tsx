@@ -21,6 +21,7 @@ import AuthPanel from "../components/auth/AuthPanel";
 import {
   createEmptyNodeRegistry,
   createNodeRegistry,
+  getPreviewHandleStyle,
   isFieldVisible,
   isMathNodeType,
   type NodeIssueSeverity,
@@ -31,7 +32,6 @@ import {
   type NodeRuntimeResult,
 } from "../components/nodes/NodeTypes";
 import {
-  NODE_HANDLE_STYLE,
   UI_ACCENT,
   UI_APP_SHELL,
   UI_BORDER_STRONG,
@@ -1249,7 +1249,9 @@ function NodeTemplatePreview({
         minWidth: 160,
       }}
     >
-      {node.inputCount > 0 && <div style={previewLeftHandleStyle(visual.handle)} />}
+      {previewData.inputs.length > 0 && (
+        <div style={getPreviewHandleStyle("left", visual.handle, previewData.inputs[0])} />
+      )}
       <div style={{ padding: "10px 14px 8px" }}>
         <div style={{ fontSize: 12, fontWeight: 500, color: visual.title }}>{previewData.displayName}</div>
         <div
@@ -1317,7 +1319,9 @@ function NodeTemplatePreview({
           })}
         </div>
       )}
-      {node.outputCount > 0 && <div style={previewRightHandleStyle(visual.handle)} />}
+      {previewData.outputs.length > 0 && (
+        <div style={getPreviewHandleStyle("right", visual.handle, previewData.outputs[0])} />
+      )}
     </div>
   );
 }
@@ -4372,34 +4376,6 @@ function previewInputStyle(borderColor: string): React.CSSProperties {
     color: UI_TEXT_SECONDARY,
     fontFamily: "monospace",
     boxShadow: `inset 0 0 0 1px ${borderColor}10`,
-  };
-}
-
-function previewLeftHandleStyle(handleColor: string): React.CSSProperties {
-  return {
-    position: "absolute",
-    left: -8,
-    top: "50%",
-    transform: "translateY(-50%)",
-    ...NODE_HANDLE_STYLE,
-    width: 10,
-    height: 10,
-    background: handleColor,
-    border: "none",
-  };
-}
-
-function previewRightHandleStyle(handleColor: string): React.CSSProperties {
-  return {
-    position: "absolute",
-    right: -8,
-    top: "50%",
-    transform: "translateY(-50%)",
-    ...NODE_HANDLE_STYLE,
-    width: 10,
-    height: 10,
-    background: handleColor,
-    border: "none",
   };
 }
 

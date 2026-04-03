@@ -27,6 +27,19 @@ type t =
       expected_kind : Node.value_kind;
       actual_value : Node.value;
     }
+  | Invalid_multi_input_arity of {
+      node_id : Node_id.t;
+      port_index : int;
+    }
+  | Missing_multi_input_connection of {
+      node_id : Node_id.t;
+      port_index : int;
+    }
+  | Too_many_incoming_edges of {
+      node_id : Node_id.t;
+      port_index : int;
+      actual_count : int;
+    }
   | Cycle_detected of Node_id.t list
 
 val to_string : t -> string

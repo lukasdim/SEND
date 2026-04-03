@@ -147,6 +147,53 @@ let validate_node_data_fields node_specs_by_type nodes =
             node.data_fields)
     nodes
 
+let incoming_edges_for_port edges node_id port_index =
+  List.filter
+    (fun (edge : Node.edge) ->
+      Node_id.compare edge.target.node_id node_id = 0 && edge.target.port_index = port_index)
+    edges
+
+let validate_input_port_arities graph node_specs_by_type nodes =
+  List.concat_map
+    (fun (node : Node.t) ->
+      match node_spec_for_node node_specs_by_type node with
+      | None -> []
+      | Some spec ->
+          spec.Node.input_ports
+          |> List.filter_map (fun (port : Node.port_spec) ->
+                 let incoming_edges = incoming_edges_for_port graph.edges node.id port.index in
+                 let incoming_count = List.length incoming_edges in
+                 match port.arity with
+                 | Node.One ->
+                     if incoming_count <= 1 then
+                       None
+                     else
+                       Some
+                         (Graph_error.Too_many_incoming_edges
+                            {
+                              node_id = node.id;
+                              port_index = port.index;
+                              actual_count = incoming_count;
+                            })
+                 | Node.Many ->
+                     if List.length spec.Node.input_ports <> 1 then
+                       Some
+                         (Graph_error.Invalid_multi_input_arity
+                            {
+                              node_id = node.id;
+                              port_index = port.index;
+                            })
+                     else if incoming_count = 0 then
+                       Some
+                         (Graph_error.Missing_multi_input_connection
+                            {
+                              node_id = node.id;
+                              port_index = port.index;
+                            })
+                     else
+                       None))
+    nodes
+
 let validate_edge nodes_by_id node_specs_by_type (edge : Node.edge) =
   match Node_id.Map.find_opt edge.source.node_id nodes_by_id with
   | None -> [ Graph_error.Missing_source_node edge.source.node_id ]
@@ -207,6 +254,7 @@ let validate graph =
     @ validate_node_specs graph.nodes node_specs_by_type
     @ validate_node_data_fields node_specs_by_type graph.nodes
     @ List.concat_map (validate_edge nodes_by_id node_specs_by_type) graph.edges
+    @ validate_input_port_arities graph node_specs_by_type graph.nodes
     @ validate_port_values graph
   in
   match errors with

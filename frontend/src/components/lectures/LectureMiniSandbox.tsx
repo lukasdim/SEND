@@ -18,6 +18,7 @@ import "reactflow/dist/style.css";
 import {
   createEmptyNodeRegistry,
   createNodeRegistry,
+  getPreviewHandleStyle,
   isFieldVisible,
   type NodeData,
   type NodeIoCatalog,
@@ -366,7 +367,9 @@ function NodeTemplatePreview({
         minWidth: 160,
       }}
     >
-      {node.inputCount > 0 && <div style={previewHandleStyle("left", visual.handle)} />}
+      {previewData.inputs.length > 0 && (
+        <div style={getPreviewHandleStyle("left", visual.handle, previewData.inputs[0])} />
+      )}
       <div style={{ padding: "10px 14px 8px" }}>
         <div style={{ fontSize: 12, fontWeight: 500, color: visual.title }}>{previewData.displayName}</div>
         <div
@@ -411,23 +414,11 @@ function NodeTemplatePreview({
           ))}
         </div>
       )}
-      {node.outputCount > 0 && <div style={previewHandleStyle("right", visual.handle)} />}
+      {previewData.outputs.length > 0 && (
+        <div style={getPreviewHandleStyle("right", visual.handle, previewData.outputs[0])} />
+      )}
     </div>
   );
-}
-
-function previewHandleStyle(side: "left" | "right", handleColor: string) {
-  return {
-    position: "absolute" as const,
-    [side]: -8,
-    top: "50%",
-    transform: "translateY(-50%)",
-    width: 10,
-    height: 10,
-    borderRadius: 999,
-    background: handleColor,
-    border: "none",
-  };
 }
 
 function SandboxInner({

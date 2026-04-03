@@ -1,6 +1,7 @@
 let all =
   [
     Add.executor;
+    Average.executor;
     Subtract.executor;
     Multiply.executor;
     Divide.executor;

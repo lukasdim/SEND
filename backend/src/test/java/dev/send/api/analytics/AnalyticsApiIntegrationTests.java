@@ -58,6 +58,7 @@ class AnalyticsApiIntegrationTests {
     void returnsBootstrapConfigForFrontend() throws Exception {
         mockMvc.perform(get("/api/analytics/config"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled", is(true)))
                 .andExpect(jsonPath("$.scriptUrl", is("/api/analytics/script.js")))
                 .andExpect(jsonPath("$.collectUrl", is("/api/analytics/collect")))
                 .andExpect(jsonPath("$.websiteId", is("test-website-id")));

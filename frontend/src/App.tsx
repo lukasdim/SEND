@@ -10,6 +10,7 @@ const UMAMI_LOG_PREFIX = "[umami]";
 const ANALYTICS_CONFIG_URL = "/api/analytics/config";
 
 type AnalyticsConfig = {
+  enabled: boolean;
   scriptUrl: string;
   collectUrl: string;
   websiteId: string;
@@ -34,14 +35,24 @@ function App() {
         });
 
         if (!response.ok) {
+          if (response.status === 404) {
+            console.warn(`${UMAMI_LOG_PREFIX} analytics disabled: backend analytics endpoint unavailable`);
+            return;
+          }
           throw new Error(`analytics config request failed with status ${response.status}`);
         }
 
         const config = (await response.json()) as Partial<AnalyticsConfig>;
+        const enabled = config.enabled === true;
         const scriptUrl = config.scriptUrl?.trim() ?? "";
         const collectUrl = config.collectUrl?.trim() ?? "";
         const websiteId = config.websiteId?.trim() ?? "";
         const hostUrl = collectUrl ? new URL(collectUrl, window.location.origin).origin : "";
+
+        if (!enabled) {
+          console.warn(`${UMAMI_LOG_PREFIX} analytics disabled: backend configuration incomplete`);
+          return;
+        }
 
         if (!scriptUrl || !collectUrl || !websiteId || !hostUrl) {
           throw new Error("analytics config response was missing required fields");

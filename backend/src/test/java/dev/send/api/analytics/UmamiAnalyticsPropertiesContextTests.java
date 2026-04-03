@@ -15,40 +15,58 @@ class UmamiAnalyticsPropertiesContextTests {
             .withConfiguration(AutoConfigurations.of(ConfigurationPropertiesAutoConfiguration.class));
 
     @Test
-    void failsWhenScriptUriIsMissing() {
+    void remainsDisabledWhenScriptUriIsMissing() {
         contextRunner
                 .withPropertyValues("app.analytics.umami.website-id=test-website-id")
                 .run(context -> {
-                    assertThat(context).hasFailed();
-                    assertRootCauseContains(
-                            context.getStartupFailure(),
-                            "app.analytics.umami.script-uri must be configured.");
+                    assertThat(context).hasNotFailed();
+                    UmamiAnalyticsProperties properties = context.getBean(UmamiAnalyticsProperties.class);
+                    assertThat(properties.isEnabled()).isFalse();
+                    assertThat(properties.isPartiallyConfigured()).isTrue();
+                    assertThat(properties.disabledReason())
+                            .contains("Umami analytics disabled: both app.analytics.umami.script-uri and app.analytics.umami.website-id must be set.");
                 });
     }
 
     @Test
-    void failsWhenWebsiteIdIsMissing() {
+    void remainsDisabledWhenWebsiteIdIsMissing() {
         contextRunner
                 .withPropertyValues("app.analytics.umami.script-uri=http://umami.internal/script.js")
                 .run(context -> {
-                    assertThat(context).hasFailed();
-                    assertRootCauseContains(
-                            context.getStartupFailure(),
-                            "app.analytics.umami.website-id must be configured.");
+                    assertThat(context).hasNotFailed();
+                    UmamiAnalyticsProperties properties = context.getBean(UmamiAnalyticsProperties.class);
+                    assertThat(properties.isEnabled()).isFalse();
+                    assertThat(properties.isPartiallyConfigured()).isTrue();
+                    assertThat(properties.disabledReason())
+                            .contains("Umami analytics disabled: both app.analytics.umami.script-uri and app.analytics.umami.website-id must be set.");
                 });
     }
 
-    private void assertRootCauseContains(Throwable failure, String expectedMessage) {
-        assertThat(failure).isNotNull();
-        assertThat(rootCauseMessage(failure)).contains(expectedMessage);
+    @Test
+    void remainsDisabledWhenAnalyticsConfigIsOmitted() {
+        contextRunner.run(context -> {
+            assertThat(context).hasNotFailed();
+            UmamiAnalyticsProperties properties = context.getBean(UmamiAnalyticsProperties.class);
+            assertThat(properties.isEnabled()).isFalse();
+            assertThat(properties.isPartiallyConfigured()).isFalse();
+            assertThat(properties.disabledReason())
+                    .contains("Umami analytics disabled: configuration not set.");
+        });
     }
 
-    private String rootCauseMessage(Throwable failure) {
-        Throwable current = failure;
-        while (current.getCause() != null) {
-            current = current.getCause();
-        }
-        return current.getMessage() == null ? "" : current.getMessage();
+    @Test
+    void enablesAnalyticsWhenBothPropertiesAreSet() {
+        contextRunner
+                .withPropertyValues(
+                        "app.analytics.umami.script-uri=http://umami.internal/script.js",
+                        "app.analytics.umami.website-id=test-website-id")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    UmamiAnalyticsProperties properties = context.getBean(UmamiAnalyticsProperties.class);
+                    assertThat(properties.isEnabled()).isTrue();
+                    assertThat(properties.isPartiallyConfigured()).isFalse();
+                    assertThat(properties.disabledReason()).isEmpty();
+                });
     }
 
     @Configuration

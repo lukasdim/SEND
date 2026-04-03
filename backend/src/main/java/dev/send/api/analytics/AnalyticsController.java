@@ -31,6 +31,7 @@ public class AnalyticsController {
             ClientAddressResolver clientAddressResolver) {
         this.analyticsProxyService = analyticsProxyService;
         this.clientAddressResolver = clientAddressResolver;
+        analyticsProxyService.analyticsDisabledReason().ifPresent(log::warn);
     }
 
     @GetMapping("/config")

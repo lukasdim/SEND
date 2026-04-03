@@ -10,6 +10,7 @@ import javax.annotation.Nullable;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -35,13 +36,26 @@ public class AnalyticsProxyService {
     }
 
     public AnalyticsBootstrapDto getBootstrapConfig() {
+        if (!analyticsProperties.isEnabled()) {
+            return new AnalyticsBootstrapDto(false, "", "", "");
+        }
+
         return new AnalyticsBootstrapDto(
+                true,
                 UmamiAnalyticsProperties.SCRIPT_PATH,
                 UmamiAnalyticsProperties.COLLECT_PATH,
                 analyticsProperties.websiteId());
     }
 
+    public java.util.Optional<String> analyticsDisabledReason() {
+        return analyticsProperties.disabledReason();
+    }
+
     public ProxyResponse fetchScript() {
+        if (!analyticsProperties.isEnabled()) {
+            return new ProxyResponse(HttpStatus.NOT_FOUND, new HttpHeaders(), new byte[0]);
+        }
+
         return analyticsRestTemplate.execute(
                 analyticsProperties.upstreamScriptUri(),
                 HttpMethod.GET,
@@ -61,6 +75,10 @@ public class AnalyticsProxyService {
             @Nullable String contentType,
             @Nullable String userAgent,
             @Nullable String clientIp) {
+        if (!analyticsProperties.isEnabled()) {
+            return new ProxyResponse(HttpStatus.NOT_FOUND, new HttpHeaders(), new byte[0]);
+        }
+
         return analyticsRestTemplate.execute(
                 analyticsProperties.upstreamCollectUri(),
                 HttpMethod.POST,
@@ -102,6 +120,7 @@ public class AnalyticsProxyService {
     }
 
     public record AnalyticsBootstrapDto(
+            boolean enabled,
             String scriptUrl,
             String collectUrl,
             String websiteId) {

@@ -36,6 +36,9 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/api/admin/**").denyAll()
+                        .requestMatchers(HttpMethod.GET, "/api/analytics/config").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/analytics/script.js").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/analytics/collect").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/strategies").authenticated()
                         .requestMatchers(HttpMethod.PUT, "/api/strategies/*").authenticated()
                         .requestMatchers("/api/**").permitAll()

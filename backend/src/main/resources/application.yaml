@@ -36,6 +36,10 @@ strategy:
     simulation-cooldown-ms: 5000
 
 app:
+  analytics:
+    umami:
+      script-uri: ${APP_ANALYTICS_UMAMI_SCRIPT_URI:}
+      website-id: ${APP_ANALYTICS_UMAMI_WEBSITE_ID:}
   auth:
     supabase:
       issuer-uri: ${APP_AUTH_SUPABASE_ISSUER_URI:}

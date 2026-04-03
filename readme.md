@@ -79,12 +79,17 @@ Set the following variables in your `.env` file:
 - `APP_AUTH_SUPABASE_ISSUER_URI`
 - `APP_AUTH_SUPABASE_JWK_SET_URI` or `APP_AUTH_SUPABASE_JWT_SECRET`
 - `APP_LECTURES_PROGRESS_COOKIE_SECRET`
+- `APP_ANALYTICS_UMAMI_SCRIPT_URI`
+- `APP_ANALYTICS_UMAMI_WEBSITE_ID`
 - `APP_AUTH_SUPABASE_AUDIENCE` (optional)
 
 Notes:
 
 - If your Supabase project uses legacy `HS256` signing, set `APP_AUTH_SUPABASE_JWT_SECRET` and leave `APP_AUTH_SUPABASE_JWK_SET_URI` empty.
 - If your Supabase project uses asymmetric signing, set `APP_AUTH_SUPABASE_JWK_SET_URI` and leave `APP_AUTH_SUPABASE_JWT_SECRET` empty.
+- `APP_ANALYTICS_UMAMI_SCRIPT_URI` should point to the Umami tracker script URL that is reachable from the backend container, for example `http://umami:3000/script.js` on a shared Docker network.
+- `APP_ANALYTICS_UMAMI_WEBSITE_ID` should match the Umami site identifier for this deployment.
+- If Umami is not configured and you don't need it, leave them blank.
 - In Docker Compose, `VITE_API_URL` should usually be left empty because the frontend uses the bundled Nginx proxy.
 
 ## Setup

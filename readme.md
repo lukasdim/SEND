@@ -132,4 +132,4 @@ Nginx routes frontend traffic and proxies `/api` requests to the backend. The ba
 
 ## Disclaimer
 
-Hackonomics is an educational platform. It does not provide investment advice, and any real-money trading decisions are made at the user's own risk.
+SEND is an educational platform. It does not provide investment advice, and any real-money trading decisions are made at the user's own risk.

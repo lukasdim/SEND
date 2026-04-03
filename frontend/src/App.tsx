@@ -5,18 +5,18 @@ import Library from "./pages/Library";
 import Sandbox from './pages/Sandbox';
 import LecturePage from "./pages/LecturePage";
 
-const UMAMI_SCRIPT_URI = import.meta.env.VITE_UMAMI_ANALYTICS_SCRIPT_URI?.trim() ?? "";
-const UMAMI_WEBSITE_ID = import.meta.env.VITE_UMAMI_ANALYTICS_WEBSITE_ID?.trim() ?? "";
 const UMAMI_SCRIPT_SELECTOR = 'script[data-umami-analytics="true"]';
 const UMAMI_LOG_PREFIX = "[umami]";
+const ANALYTICS_CONFIG_URL = "/api/analytics/config";
+
+type AnalyticsConfig = {
+  scriptUrl: string;
+  collectUrl: string;
+  websiteId: string;
+};
 
 function App() {
   useEffect(() => {
-    if (!UMAMI_SCRIPT_URI || !UMAMI_WEBSITE_ID) {
-      console.info(`${UMAMI_LOG_PREFIX} analytics disabled: missing script URI or website ID`);
-      return;
-    }
-
     const existingScript = document.head.querySelector<HTMLScriptElement>(UMAMI_SCRIPT_SELECTOR);
 
     if (existingScript) {
@@ -24,29 +24,77 @@ function App() {
       return;
     }
 
-    const script = document.createElement("script");
-    script.defer = true;
-    script.src = UMAMI_SCRIPT_URI;
-    script.dataset.websiteId = UMAMI_WEBSITE_ID;
-    script.dataset.umamiAnalytics = "true";
-    script.addEventListener("load", () => {
-      console.info(`${UMAMI_LOG_PREFIX} analytics script loaded successfully`, {
-        scriptUri: UMAMI_SCRIPT_URI,
-        websiteId: UMAMI_WEBSITE_ID,
-      });
-    });
-    script.addEventListener("error", () => {
-      console.error(`${UMAMI_LOG_PREFIX} failed to load analytics script`, {
-        scriptUri: UMAMI_SCRIPT_URI,
-        websiteId: UMAMI_WEBSITE_ID,
-      });
-    });
+    const abortController = new AbortController();
 
-    console.info(`${UMAMI_LOG_PREFIX} injecting analytics script`, {
-      scriptUri: UMAMI_SCRIPT_URI,
-      websiteId: UMAMI_WEBSITE_ID,
-    });
-    document.head.appendChild(script);
+    const bootstrapAnalytics = async () => {
+      try {
+        const response = await fetch(ANALYTICS_CONFIG_URL, {
+          credentials: "same-origin",
+          signal: abortController.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`analytics config request failed with status ${response.status}`);
+        }
+
+        const config = (await response.json()) as Partial<AnalyticsConfig>;
+        const scriptUrl = config.scriptUrl?.trim() ?? "";
+        const collectUrl = config.collectUrl?.trim() ?? "";
+        const websiteId = config.websiteId?.trim() ?? "";
+
+        if (!scriptUrl || !collectUrl || !websiteId) {
+          throw new Error("analytics config response was missing required fields");
+        }
+
+        const injectedScript = document.head.querySelector<HTMLScriptElement>(UMAMI_SCRIPT_SELECTOR);
+        if (injectedScript) {
+          console.info(`${UMAMI_LOG_PREFIX} analytics script already present`);
+          return;
+        }
+
+        const script = document.createElement("script");
+        script.defer = true;
+        script.src = scriptUrl;
+        script.dataset.websiteId = websiteId;
+        script.dataset.umamiAnalytics = "true";
+        script.addEventListener("load", () => {
+          console.info(`${UMAMI_LOG_PREFIX} analytics script loaded successfully`, {
+            scriptUrl,
+            collectUrl,
+            websiteId,
+          });
+        });
+        script.addEventListener("error", () => {
+          console.error(`${UMAMI_LOG_PREFIX} failed to load analytics script`, {
+            scriptUrl,
+            collectUrl,
+            websiteId,
+          });
+        });
+
+        console.info(`${UMAMI_LOG_PREFIX} injecting analytics script`, {
+          scriptUrl,
+          collectUrl,
+          websiteId,
+        });
+        document.head.appendChild(script);
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : String(error);
+        console.info(`${UMAMI_LOG_PREFIX} analytics disabled: config bootstrap failed`, {
+          error: message,
+        });
+      }
+    };
+
+    void bootstrapAnalytics();
+
+    return () => {
+      abortController.abort();
+    };
   }, []);
 
   return (

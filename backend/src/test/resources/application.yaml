@@ -32,6 +32,10 @@ strategy:
     simulation-cooldown-ms: 5000
 
 app:
+  analytics:
+    umami:
+      script-uri: http://umami.internal/script.js
+      website-id: test-website-id
   auth:
     supabase:
       issuer-uri: https://test-project.supabase.co/auth/v1

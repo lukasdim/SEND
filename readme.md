@@ -2,7 +2,8 @@
 
 SEND is an interactive financial education platform centered around a node-based strategy editor. Users can build trading logic as graphs, test strategies against historical market data, and work through guided learning modules that teach both the platform and core investing concepts.
 
-A working demo is available at [sendsys.io](https://sendsys.io).
+A working demo following the main branch is available at [sendsys.io](https://sendsys.io).
+You can see the progress of new features in various branches.
 
 ## Features
 
